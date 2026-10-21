@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Laporan Harian IT</title>
+<meta name="theme-color" content="#0B6E78">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Laporan IT">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%230B6E78'/><text x='32' y='42' font-family='Arial' font-weight='700' font-size='26' fill='white' text-anchor='middle'>IT</text></svg>">
+<style>
+  html,body{margin:0;height:100%;background:#E9EDF1;font-family:Arial,Helvetica,sans-serif}
+  iframe{position:fixed;inset:0;width:100%;height:100%;border:0}
+  .fallback{position:fixed;inset:0;display:none;place-items:center;text-align:center;padding:24px;color:#17222D}
+  .fallback.on{display:grid}
+  .fallback a{display:inline-block;margin-top:14px;background:#0B6E78;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700}
+</style>
+</head>
+<body>
+<!-- GANTI link di bawah dengan Web app URL Anda (yang berakhiran /exec) -->
+<script>const APP_URL = "TEMPEL_WEB_APP_URL_DI_SINI";</script>
+
+<iframe id="app" title="Laporan Harian IT" allow="clipboard-write"></iframe>
+<div class="fallback" id="fb"><div>
+  <b>Aplikasi tidak bisa ditampilkan di halaman ini.</b><br>
+  Biasanya karena browser memblokir cookie Google di dalam halaman lain.
+  <br><a id="open" target="_top">Buka Laporan Harian IT</a>
+</div></div>
+
+<script>
+  const f = document.getElementById("app");
+  document.getElementById("open").href = APP_URL;
+  f.src = APP_URL;
+  // Jika aplikasi tidak termuat dalam 12 detik, tampilkan tombol untuk membuka langsung
+  let loaded = false;
+  f.addEventListener("load", () => { loaded = true; });
+  setTimeout(() => { if (!loaded) document.getElementById("fb").classList.add("on"); }, 12000);
+</script>
+</body>
+</html>
