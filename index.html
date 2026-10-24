@@ -1,34 +1,370 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Laporan Harian IT</title>
-<meta name="theme-color" content="#0B6E78">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Laporan IT">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%230B6E78'/><text x='32' y='42' font-family='Arial' font-weight='700' font-size='26' fill='white' text-anchor='middle'>IT</text></svg>">
-<style>
-  html,body{margin:0;height:100%;background:#E9EDF1;font-family:Arial,Helvetica,sans-serif;color:#17222D}
-  .box{height:100%;display:grid;place-items:center;text-align:center;padding:24px}
-  .logo{width:56px;height:56px;border-radius:14px;background:#0B6E78;color:#fff;display:grid;place-items:center;font-weight:700;font-size:22px;margin:0 auto 14px}
-  .spin{width:22px;height:22px;border:3px solid #0B6E78;border-right-color:transparent;border-radius:50%;margin:16px auto;animation:s .8s linear infinite}
-  @keyframes s{to{transform:rotate(360deg)}}
-  a{display:inline-block;margin-top:6px;background:#0B6E78;color:#fff;text-decoration:none;padding:11px 18px;border-radius:10px;font-weight:700}
-</style>
-</head>
-<body>
-<div class="box"><div>
-  <div class="logo">IT</div>
-  <b>Membuka Laporan Harian IT…</b>
-  <div class="spin"></div>
-  <a id="go">Buka aplikasi</a>
-</div></div>
-<script>
-  // Link Web App Apps Script (yang berakhiran /exec)
-  const APP_URL = "https://script.google.com/macros/s/AKfycbwRG6sTokhK1X0WQjIjrOYcM_pjLysyPiiTBgZktAo_mj_GWlyMkzB5BkOg7a4RVMBu/exec";
-  document.getElementById("go").href = APP_URL;
-  location.replace(APP_URL);   // langsung pindah ke aplikasi (tanpa iframe, jadi tidak kena error akun/cookie Google)
-</script>
-</body>
-</html>
+/**
+ * Laporan Harian IT - Google Apps Script + Google Sheets
+ * Database: spreadsheet tempat script ini dipasang (Extensions > Apps Script).
+ * Jalankan fungsi setup() sekali, lalu Deploy sebagai Web App.
+ */
+
+const HDR = {
+  Laporan: ['ID','Tanggal','Email','Nama','Divisi','Jenis Hari','Lembur Mulai','Lembur Selesai','Jam Lembur','Alasan Lembur',
+            'Status Sistem','Pengajuan','Pengajuan (KO)','Kendala','Kendala (KO)','Rencana Besok','Rencana Besok (KO)',
+            'Mingguan/Bulanan','Catatan','Catatan (KO)','Status','Dikirim','Disetujui Oleh','Waktu Approval','Catatan Atasan','Diperbarui'],
+  Aktivitas: ['ID Laporan','Tanggal','Email','No','Jam','Aktivitas','User','Divisi','Keterangan','Kategori','Status','Utama','Lanjutan Dari'],
+  Checklist: ['ID Laporan','Tanggal','Email','Item','Selesai','Jam','Ada Masalah','Catatan'],
+  Log: ['Waktu','Email','Aksi','ID Laporan','Detail'],
+  Pengaturan: ['Kunci','Nilai','Keterangan']
+};
+
+const DEFAULT_SET = [
+  ['Nama Petugas','Heinsyen','Nama yang tampil di laporan'],
+  ['Nama Perusahaan','WOORI CONSULTING, PT',''],
+  ['Divisi','IT',''],
+  ['Email Atasan','','Email yang boleh MENYETUJUI laporan. Pisahkan dengan koma.'],
+  ['Email Kepada','','Penerima email Daily Activity Report. Pisahkan dengan koma.'],
+  ['Email CC','','CC email laporan. Pisahkan dengan koma.'],
+  ['Kirim Otomatis','Ya','Ya = Daily Activity Report dikirim otomatis setiap hari (jika ada laporan dan belum dikirim).'],
+  ['Jam Kirim Otomatis','17','Jam pengiriman otomatis (0-23). Jalankan pasangJadwalOtomatis setelah mengubah.'],
+  ['Jam Masuk','08:00',''],
+  ['Jam Pulang','17:00',''],
+  ['Checklist','Cek status backup harian NAS Synology\nCek server dan storage\nCek koneksi internet dan jaringan\nCek CCTV / DVR\nCek antivirus\nCek suhu dan kebersihan ruang server','Satu item per baris (Alt+Enter di dalam sel)'],
+  ['Kategori','Support user\nJaringan\nServer\nHardware\nSoftware\nKeamanan\nBackup\nDokumentasi\nLainnya','Satu kategori per baris']
+];
+const SYSTEMS = ['Server','Jaringan','Internet','Email','Backup','CCTV'];
+
+/* ---------------- web app ---------------- */
+function doGet() {
+  return HtmlService.createTemplateFromFile('Index').evaluate()
+    .setTitle('Laporan Harian IT')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/* ---------------- helpers ---------------- */
+function ss_() {
+  const id = PropertiesService.getScriptProperties().getProperty('SS_ID');
+  if (id) return SpreadsheetApp.openById(id);
+  const s = SpreadsheetApp.getActiveSpreadsheet();
+  if (!s) throw new Error('Script harus dipasang dari menu Extensions > Apps Script di spreadsheet database.');
+  return s;
+}
+function sh_(name) {
+  const ss = ss_();
+  let s = ss.getSheetByName(name);
+  if (!s) {
+    s = ss.insertSheet(name);
+    s.getRange(1, 1, 1, HDR[name].length).setValues([HDR[name]]).setFontWeight('bold').setBackground(name === 'Pengaturan' ? '#9BC2E6' : '#A9D08E');
+    s.setFrozenRows(1);
+    if (name === 'Pengaturan') {
+      s.getRange(2, 1, DEFAULT_SET.length, 3).setValues(DEFAULT_SET).setWrap(true).setVerticalAlignment('top');
+      s.setColumnWidth(1, 160); s.setColumnWidth(2, 360); s.setColumnWidth(3, 360);
+    }
+  }
+  return s;
+}
+function tz_() { return Session.getScriptTimeZone() || 'Asia/Jakarta'; }
+function now_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm'); }
+function today_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd'); }
+function me_() { if (!CUR) CUR = owner_(); return CUR.email; }
+function T_(v) { return "'" + String(v == null ? '' : v); }   // simpan sebagai teks (tanggal & jam tidak diubah Sheets)
+function lines_(s) { return String(s || '').split(/\r?\n/).map(x => x.trim()).filter(String); }
+function emails_(s) { return String(s || '').split(/[,;\s]+/).map(x => x.trim().toLowerCase()).filter(x => /@/.test(x)); }
+function settings_() {
+  const o = {}, sh = sh_('Pengaturan');
+  sh.getDataRange().getDisplayValues().slice(1).forEach(r => { if (r[0]) o[r[0]] = r[1]; });
+  const miss = DEFAULT_SET.filter(d => !(d[0] in o));          // tambahkan pengaturan baru yang belum ada
+  if (miss.length) { sh.getRange(sh.getLastRow() + 1, 1, miss.length, 3).setValues(miss); miss.forEach(d => o[d[0]] = d[1]); }
+  return o;
+}
+function isApprover_(email, set) { return false; }
+function rows_(name) {
+  const v = sh_(name).getDataRange().getDisplayValues();
+  const h = v.shift() || [];
+  return v.map((r, i) => { const o = { _row: i + 2 }; h.forEach((k, j) => o[k] = r[j]); return o; });
+}
+function log_(email, act, id, detail) { sh_('Log').appendRow([T_(now_()), email, act, id, detail || '']); }
+function deleteRowsById_(name, id) {
+  const s = sh_(name), v = s.getRange(1, 1, s.getLastRow(), 1).getDisplayValues();
+  for (let i = v.length - 1; i >= 1; i--) if (v[i][0] === id) s.deleteRow(i + 1);
+}
+function hours_(a, b) {
+  if (!a || !b) return 0;
+  const p = x => { const t = String(x).split(':'); return (+t[0]) * 60 + (+t[1] || 0); };
+  let d = p(b) - p(a); if (d < 0) d += 1440; return Math.round(d / 6) / 10;
+}
+function isWeekend_(date) { const d = new Date(date + 'T00:00:00'); return d.getDay() === 0 || d.getDay() === 6; }
+
+/* ---------------- pemilik (tanpa login) ---------------- */
+let CUR = null;
+function owner_() {
+  const set = settings_();
+  return { email: String(Session.getEffectiveUser().getEmail() || 'petugas').toLowerCase(), nama: set['Nama Petugas'] || 'Petugas IT', role: 'Petugas' };
+}
+const API_ = {
+  getInit: getInit_, saveProfile: saveProfile_, getReport: getReport_, saveReport: saveReport_, cancelSubmit: cancelSubmit_,
+  listReports: listReports_, translateKo: translateKo_, getDar: getDar_, sendDarEmail: sendDarEmail_
+};
+function api(name, args) {
+  CUR = owner_();
+  const f = API_[name]; if (!f) throw new Error('Fungsi tidak dikenal: ' + name);
+  return f.apply(null, args || []);
+}
+
+/* ---------------- API untuk halaman GitHub (tanpa iframe) ---------------- */
+function doPost(e) {
+  let out;
+  try {
+    const req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    out = { result: api(req.fn, req.args || []) };
+  } catch (err) { out = { error: String((err && err.message) || err) }; }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/* ---------------- kirim otomatis ---------------- */
+function kirimOtomatis() {
+  CUR = owner_();
+  const set = settings_();
+  if (String(set['Kirim Otomatis'] || 'Ya').trim().toLowerCase() === 'tidak') return 'Kirim otomatis nonaktif';
+  const d = today_(), id = d + '|' + me_();
+  const r = rows_('Laporan').find(x => x.ID === id);
+  if (!r) return 'Tidak ada laporan hari ini';
+  if (rows_('Log').some(l => l['ID Laporan'] === id && l.Aksi === 'Email')) return 'Sudah dikirim hari ini';
+  sendDarEmail_(d);
+  const s = sh_('Laporan'); s.getRange(r._row, HDR.Laporan.indexOf('Status') + 1).setValue('Terkirim');
+  s.getRange(r._row, HDR.Laporan.indexOf('Dikirim') + 1).setValue(T_(now_()));
+  return 'Terkirim otomatis';
+}
+function pasangJadwalOtomatis() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'kirimOtomatis').forEach(t => ScriptApp.deleteTrigger(t));
+  const h = Math.min(23, Math.max(0, parseInt(settings_()['Jam Kirim Otomatis'] || '17', 10) || 17));
+  ScriptApp.newTrigger('kirimOtomatis').timeBased().everyDays(1).atHour(h).nearMinute(30).inTimezone(tz_()).create();
+  return 'Jadwal aktif: setiap hari sekitar pukul ' + h + '.30';
+}
+function hentikanJadwalOtomatis() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'kirimOtomatis').forEach(t => ScriptApp.deleteTrigger(t));
+  return 'Jadwal kirim otomatis dihentikan';
+}
+
+/* ---------------- setup ---------------- */
+function setup() {
+  Object.keys(HDR).forEach(sh_);
+  PropertiesService.getScriptProperties().setProperty('SS_ID', SpreadsheetApp.getActiveSpreadsheet().getId());
+  const def = ss_().getSheetByName('Sheet1'); if (def && def.getLastRow() === 0) ss_().deleteSheet(def);
+  return 'Setup selesai. Isi sheet Pengaturan, jalankan pasangJadwalOtomatis, lalu Deploy sebagai Web App (Execute as: Me, Access: Anyone).';
+}
+
+/* ---------------- API untuk halaman ---------------- */
+function getInit_() {
+  const set = settings_(), me = me_();
+  const name = CUR.nama;
+  return {
+    me, name, isApprover: isApprover_(me, set), today: today_(), sheetUrl: ss_().getUrl(),
+    settings: {
+      company: set['Nama Perusahaan'] || '', division: set['Divisi'] || 'IT',
+      to: set['Email Kepada'] || '', cc: set['Email CC'] || '',
+      jamMasuk: set['Jam Masuk'] || '08:00', jamPulang: set['Jam Pulang'] || '17:00',
+      checklist: lines_(set['Checklist']), categories: lines_(set['Kategori'])
+    }
+  };
+}
+
+function saveProfile_(p) {
+  const s = sh_('Pengaturan'), v = s.getDataRange().getDisplayValues();
+  const put = (k, val) => { for (let i = 1; i < v.length; i++) if (v[i][0] === k) { s.getRange(i + 1, 2).setValue(val); return; } s.appendRow([k, val, '']); };
+  if (p && typeof p.to === 'string') put('Email Kepada', p.to.trim());
+  if (p && typeof p.cc === 'string') put('Email CC', p.cc.trim());
+  return getInit_();
+}
+
+function tasksOf_(akt, rid) {
+  return akt.filter(a => a['ID Laporan'] === rid).sort((a, b) => (+a.No) - (+b.No)).map(a => ({
+    time: a.Jam, desc: a.Aktivitas, user: a.User, div: a.Divisi, ket: a.Keterangan,
+    cat: a.Kategori, status: a.Status || 'Selesai', utama: a.Utama === 'Ya', dari: a['Lanjutan Dari']
+  }));
+}
+
+function getReport_(date, email) {
+  email = String(email || me_()).toLowerCase();
+  const id = date + '|' + email, lap = rows_('Laporan');
+  const r = lap.find(x => x.ID === id);
+  const prev = lap.filter(x => x.Email === email && x.Tanggal < date).sort((a, b) => a.Tanggal < b.Tanggal ? 1 : -1)[0];
+  const akt = rows_('Aktivitas');
+  let report = null;
+  if (r) {
+    let sys = {}; try { sys = JSON.parse(r['Status Sistem'] || '{}'); } catch (e) {}
+    report = {
+      id, date, email, name: r.Nama, status: r.Status, sent: r.Dikirim,
+      lembur: { mulai: r['Lembur Mulai'], selesai: r['Lembur Selesai'], alasan: r['Alasan Lembur'] },
+      systems: sys, decision: r.Pengajuan, issues: r.Kendala, plan: r['Rencana Besok'], weekly: r['Mingguan/Bulanan'], notes: r.Catatan,
+      ko: { decision: r['Pengajuan (KO)'], issues: r['Kendala (KO)'], plan: r['Rencana Besok (KO)'], notes: r['Catatan (KO)'] },
+      approvedBy: r['Disetujui Oleh'], approvedAt: r['Waktu Approval'], bossNote: r['Catatan Atasan'], updated: r.Diperbarui,
+      tasks: tasksOf_(akt, id),
+      checks: rows_('Checklist').filter(c => c['ID Laporan'] === id).map(c => ({ label: c.Item, done: c.Selesai === 'Ya', at: c.Jam, issue: c['Ada Masalah'] === 'Ya', note: c.Catatan }))
+    };
+  }
+  return {
+    report,
+    prev: prev ? { date: prev.Tanggal, tasks: tasksOf_(akt, prev.ID), weekly: prev['Mingguan/Bulanan'] } : null,
+    logs: rows_('Log').filter(l => l['ID Laporan'] === id).map(l => ({ at: l.Waktu, by: l.Email, act: l.Aksi, detail: l.Detail }))
+  };
+}
+
+function saveReport_(r, submit) {
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const me = me_(), set = settings_(), id = r.date + '|' + me, H = HDR.Laporan;
+    const lap = rows_('Laporan'), ex = lap.find(x => x.ID === id), now = now_();
+    let status = ex ? ex.Status : 'Draf', sent = ex ? ex.Dikirim : '', appBy = ex ? ex['Disetujui Oleh'] : '', appAt = ex ? ex['Waktu Approval'] : '', boss = ex ? ex['Catatan Atasan'] : '';
+    if (submit) { status = 'Terkirim'; sent = now; }
+    const hol = isWeekend_(r.date), L = r.lembur || {}, ko = r.ko || {};
+    const row = {
+      'ID': id, 'Tanggal': T_(r.date), 'Email': me, 'Nama': CUR.nama || r.name || '', 'Divisi': set['Divisi'] || 'IT',
+      'Jenis Hari': hol ? 'Libur / Lembur' : 'Hari kerja', 'Lembur Mulai': T_(L.mulai || ''), 'Lembur Selesai': T_(L.selesai || ''),
+      'Jam Lembur': hol ? hours_(L.mulai, L.selesai) : '', 'Alasan Lembur': L.alasan || '', 'Status Sistem': JSON.stringify(r.systems || {}),
+      'Pengajuan': r.decision || '', 'Pengajuan (KO)': ko.decision || '', 'Kendala': r.issues || '', 'Kendala (KO)': ko.issues || '',
+      'Rencana Besok': r.plan || '', 'Rencana Besok (KO)': ko.plan || '', 'Mingguan/Bulanan': r.weekly || '', 'Catatan': r.notes || '', 'Catatan (KO)': ko.notes || '',
+      'Status': status, 'Dikirim': T_(sent), 'Disetujui Oleh': appBy, 'Waktu Approval': T_(appAt), 'Catatan Atasan': boss, 'Diperbarui': T_(now)
+    };
+    const vals = [H.map(k => row[k])], s = sh_('Laporan');
+    if (ex) s.getRange(ex._row, 1, 1, H.length).setValues(vals); else s.getRange(s.getLastRow() + 1, 1, 1, H.length).setValues(vals);
+
+    deleteRowsById_('Aktivitas', id);
+    const tasks = (r.tasks || []).map((t, i) => [id, T_(r.date), me, i + 1, T_(t.time || ''), t.desc || '', t.user || '', t.div || '', t.ket || '', t.cat || '', t.status || 'Selesai', t.utama ? 'Ya' : '', T_(t.dari || '')]);
+    if (tasks.length) { const a = sh_('Aktivitas'); a.getRange(a.getLastRow() + 1, 1, tasks.length, HDR.Aktivitas.length).setValues(tasks); }
+    deleteRowsById_('Checklist', id);
+    const checks = (r.checks || []).map(c => [id, T_(r.date), me, c.label, c.done ? 'Ya' : '', T_(c.at || ''), c.issue ? 'Ya' : '', c.note || '']);
+    if (checks.length) { const c = sh_('Checklist'); c.getRange(c.getLastRow() + 1, 1, checks.length, HDR.Checklist.length).setValues(checks); }
+
+  } finally { lock.releaseLock(); }
+  let mail = null;
+  if (submit && r.sendEmail) { try { mail = sendDarEmail_(r.date); } catch (e) { mail = { error: e.message }; } }
+  const out = getReport_(r.date); out.mail = mail; return out;
+}
+
+function cancelSubmit_(date) {
+  const me = me_(), id = date + '|' + me, lap = rows_('Laporan'), ex = lap.find(x => x.ID === id);
+  if (!ex) throw new Error('Laporan tidak ditemukan');
+  sh_('Laporan').getRange(ex._row, HDR.Laporan.indexOf('Status') + 1).setValue('Draf');
+  log_(me, 'Batal kirim', id, '');
+  return getReport_(date);
+}
+
+function listReports_(month, scope) {
+  const me = me_(), set = settings_(), appr = isApprover_(me, set), cnt = {};
+  rows_('Aktivitas').forEach(a => { const k = a['ID Laporan']; cnt[k] = cnt[k] || { n: 0, d: 0 }; cnt[k].n++; if (a.Status === 'Selesai') cnt[k].d++; });
+  return rows_('Laporan').filter(r => (!month || r.Tanggal.indexOf(month) === 0) && (scope === 'review' ? (appr && r.Status !== 'Draf') : r.Email === me))
+    .sort((a, b) => a.Tanggal < b.Tanggal ? 1 : -1)
+    .map(r => ({ id: r.ID, date: r.Tanggal, email: r.Email, name: r.Nama, status: r.Status, lembur: r['Jam Lembur'], decision: r.Pengajuan,
+                 tasks: (cnt[r.ID] || {}).n || 0, done: (cnt[r.ID] || {}).d || 0, approvedBy: r['Disetujui Oleh'], approvedAt: r['Waktu Approval'] }));
+}
+
+function openForReview_(id) {
+  const me = me_(); if (!isApprover_(me, settings_())) throw new Error('Anda tidak terdaftar sebagai atasan');
+  const logs = rows_('Log').filter(l => l['ID Laporan'] === id);
+  const last = logs[logs.length - 1];
+  if (last && last.Aksi === 'Kirim') log_(me, 'Dibaca', id, '');
+  const p = id.split('|'); return getReport_(p[0], p[1]);
+}
+
+function approve_(id, ok, note) {
+  const me = me_(), set = settings_();
+  if (!isApprover_(me, set)) throw new Error('Anda tidak terdaftar sebagai atasan di sheet Pengaturan');
+  const r = rows_('Laporan').find(x => x.ID === id); if (!r) throw new Error('Laporan tidak ditemukan');
+  if (r.Email === me) throw new Error('Tidak bisa menyetujui laporan sendiri');
+  if (!ok && !String(note || '').trim()) throw new Error('Tulis catatan revisi');
+  const s = sh_('Laporan'), H = HDR.Laporan, now = now_();
+  s.getRange(r._row, H.indexOf('Status') + 1).setValue(ok ? 'Disetujui' : 'Perlu revisi');
+  s.getRange(r._row, H.indexOf('Disetujui Oleh') + 1).setValue(ok ? me : '');
+  s.getRange(r._row, H.indexOf('Waktu Approval') + 1).setValue(T_(now));
+  s.getRange(r._row, H.indexOf('Catatan Atasan') + 1).setValue(note || '');
+  log_(me, ok ? 'Disetujui' : 'Minta revisi', id, note || '');
+  return listReports_('', 'review');
+}
+
+function translateKo_(obj) {
+  const out = {};
+  Object.keys(obj || {}).forEach(k => {
+    const t = String(obj[k] || '').trim();
+    out[k] = t ? lines_(t).map(l => LanguageApp.translate(l, 'id', 'ko')).join('\n') : '';
+  });
+  return out;
+}
+
+/* ---------------- Daily Activity Report ---------------- */
+function enDate_(d, short) {
+  const x = new Date(d + 'T00:00:00');
+  return Utilities.formatDate(x, tz_(), short ? 'EEEE, d MMM yyyy' : 'EEEE, d MMMM yyyy');
+}
+function nextWork_(d) { const x = new Date(d + 'T00:00:00'); do { x.setDate(x.getDate() + 1); } while (x.getDay() === 0 || x.getDay() === 6); return Utilities.formatDate(x, tz_(), 'yyyy-MM-dd'); }
+function monthWeek_(d) {
+  const BLN = ['JANUARI','FEBRUARI','MARET','APRIL','MEI','JUNI','JULI','AGUSTUS','SEPTEMBER','OKTOBER','NOVEMBER','DESEMBER'];
+  const BS = ['JAN','FEB','MAR','APR','MEI','JUN','JUL','AGU','SEP','OKT','NOV','DES'];
+  const x = new Date(d + 'T00:00:00'), y = x.getFullYear(), m = x.getMonth();
+  const off = (new Date(y, m, 1).getDay() + 6) % 7, wk = Math.ceil((x.getDate() + off) / 7);
+  const s = new Date(x); s.setDate(x.getDate() - ((x.getDay() + 6) % 7)); const e = new Date(s); e.setDate(s.getDate() + 6);
+  const sd = s.getMonth() === m ? s.getDate() : 1, ed = e.getMonth() === m ? e.getDate() : new Date(y, m + 1, 0).getDate();
+  return BLN[m] + ' ' + y + '\nMINGGU KE-' + wk + '\n(' + sd + '–' + ed + ' ' + BS[m] + ')';
+}
+function taskLine_(t) {
+  const D = String(t.desc || '').toUpperCase();
+  const who = [t.user, t.div].map(x => String(x || '').trim()).filter(x => x && D.indexOf(x.toUpperCase()) < 0).join(' - ');
+  return String(t.desc || '').trim() + (who ? ' (USER: ' + who + ')' : '') + (String(t.ket || '').trim() ? ' - ' + t.ket.trim() : '') + (t.status && t.status !== 'Selesai' ? ' (' + t.status + ')' : '');
+}
+function bi_(txt, ko) {
+  const a = lines_(txt), b = lines_(ko);
+  if (!b.length) return a;
+  return b.length === a.length ? a.map((x, i) => x + ' (' + b[i] + ')') : a.concat(b);
+}
+function getDar_(date, email) {
+  email = String(email || me_()).toLowerCase();
+  const set = settings_(), g = getReport_(date, email), r = g.report, p = g.prev;
+  const name = (r && r.name) || (email === me_() ? CUR.nama : email);
+  const note = [];
+  if (r) {
+    if (r.lembur && r.lembur.mulai && isWeekend_(date)) note.push('Lembur ' + hours_(r.lembur.mulai, r.lembur.selesai) + ' jam: ' + (r.lembur.alasan || '-'));
+    (r.checks || []).forEach(c => { if (c.issue || String(c.note || '').trim()) note.push((c.issue ? 'Masalah ' : 'Cek ') + c.label.replace(/^cek\s+/i, '') + ': ' + (c.note || 'perlu ditindaklanjuti')); });
+    bi_(r.issues, r.ko.issues).forEach(x => note.push('Kendala: ' + x));
+    bi_(r.decision, r.ko.decision).forEach(x => note.push('Perlu keputusan: ' + x));
+    bi_(r.notes, r.ko.notes).forEach(x => note.push(x));
+    if (r.status === 'Disetujui') note.push('Disetujui oleh ' + r.approvedBy + ', ' + r.approvedAt);
+  }
+  return {
+    date, name, division: set['Divisi'] || 'IT', company: set['Nama Perusahaan'] || '', exists: !!r, month: monthWeek_(date),
+    dateLabel: enDate_(date),
+    cols: [
+      { h: 'Weekly / Monthly', d: '', items: lines_(r ? r.weekly : (p ? p.weekly : '')) },
+      { h: 'YESTERDAY', d: p ? enDate_(p.date, true) : '', items: p ? p.tasks.map(taskLine_) : [] },
+      { h: 'TODAY', d: enDate_(date, true), items: r ? r.tasks.map(taskLine_) : [] },
+      { h: 'TOMORROW', d: enDate_(nextWork_(date), true), items: r ? bi_(r.plan, r.ko.plan) : [] },
+      { h: 'NOTE', d: enDate_(date, true), items: note }
+    ]
+  };
+}
+function esc_(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function darHtml_(D) {
+  const cell = 'border:1px solid #222;padding:6px 8px;font-family:Arial,Helvetica,sans-serif;';
+  return '<h2 style="text-align:center;font-family:Arial;font-size:20px;margin:10px 0">DAILY ACTIVITY REPORT</h2>' +
+    '<table style="border-collapse:collapse;margin-bottom:10px;font:bold 13px Arial"><tr><td style="padding:2px 14px 2px 0">NAME</td><td>: ' + esc_(D.name) + '</td></tr>' +
+    '<tr><td style="padding:2px 14px 2px 0">DIVISION</td><td>: ' + esc_(D.division) + '</td></tr><tr><td style="padding:2px 14px 2px 0">DATE</td><td>: ' + esc_(D.dateLabel) + '</td></tr></table>' +
+    '<table style="border-collapse:collapse;width:100%;table-layout:fixed"><tr>' +
+    D.cols.map((c, i) => '<th style="' + cell + 'background:' + (i === 4 ? '#9BC2E6' : '#A9D08E') + ';font-size:13px">' + esc_(c.h) + '</th>').join('') + '</tr><tr>' +
+    D.cols.map(c => '<td style="' + cell + 'background:#F2F2F2;text-align:center;font-weight:bold;font-size:11px">' + (esc_(c.d) || '&nbsp;') + '</td>').join('') + '</tr><tr>' +
+    D.cols.map((c, i) => '<td style="' + cell + 'vertical-align:top;font-size:11px;font-weight:bold">' +
+      (i === 0 ? '<div style="text-align:center;margin-bottom:6px">' + esc_(D.month).replace(/\n/g, '<br>') + '</div>' : '') +
+      (c.items.length ? '<ol style="margin:0;padding-left:16px">' + c.items.map(x => '<li style="margin-bottom:3px">' + esc_(x.toUpperCase()) + '</li>').join('') + '</ol>' : (i === 0 ? '' : '<span style="color:#888;font-weight:normal">Tidak ada</span>')) +
+      '</td>').join('') + '</tr></table>';
+}
+function sendDarEmail_(date) {
+  const set = settings_(), me = me_(), to = emails_(set['Email Kepada']), cc = emails_(set['Email CC']);
+  if (!to.length) throw new Error('Isi Email Kepada di sheet Pengaturan atau di tab Rekap');
+  const D = getDar_(date, me);
+  const subject = 'Daily Activity Report IT - ' + D.name + ' - ' + D.dateLabel;
+  const body = darHtml_(D);
+  const pdf = Utilities.newBlob('<html><body style="margin:16px">' + body + '</body></html>', 'text/html', 'dar.html')
+    .getAs('application/pdf').setName('Daily Activity Report ' + date + '.pdf');
+  MailApp.sendEmail({
+    to: to.join(','), cc: cc.join(','), subject,
+    htmlBody: '<div style="font-family:Arial;font-size:14px"><p>Yth. Bapak/Ibu,</p><p>Berikut Daily Activity Report divisi ' + esc_(D.division) + ' tanggal <b>' + esc_(D.dateLabel) + '</b>. File PDF terlampir.</p>' + body + '<p style="margin-top:16px">Terima kasih,<br>' + esc_(D.name) + '</p></div>',
+    attachments: [pdf]
+  });
+  log_(me, 'Email', date + '|' + me, 'ke ' + to.join(', ') + (cc.length ? ' (cc ' + cc.join(', ') + ')' : ''));
+  return { ok: true, to, cc };
+}
