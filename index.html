@@ -146,12 +146,22 @@ main{overflow-x:hidden;overflow-x:clip}
 .dt td small{display:block;color:var(--muted);font-size:12px}
 .dt td:first-child,.dt td:nth-child(2){white-space:nowrap;color:var(--muted)}
 .dfield{margin-top:10px}.dfield b{font-size:13px}.dfield p{margin:2px 0;white-space:pre-line;font-size:14px}.dfield ul{margin:4px 0;padding-left:18px;font-size:14px}
+.card.lg{width:min(340px,92vw);padding:24px}
+.lg-logo{width:52px;height:52px;border-radius:14px;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700;font-size:20px;margin:0 auto 12px}
 [hidden]{display:none!important}
 @media(max-width:640px){.in,.task .in{font-size:16px}.tabs{width:100%;margin:0}.tab{flex:1;padding:6px 4px;font-size:13px}.actions .btn{flex:1}}
 </style>
 </head>
 <body>
 <div class="loading" id="loading">Memuat data dari Google Sheets…</div>
+<div class="loading" id="login" hidden><form class="card lg" onsubmit="event.preventDefault();doLogin()">
+  <div class="lg-logo">IT</div>
+  <h2 style="text-align:center;margin:0 0 4px">Laporan Harian IT</h2>
+  <p class="hint" style="text-align:center">Masukkan PIN untuk melanjutkan</p>
+  <input class="in" id="lgPin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN" style="text-align:center;font-size:22px;letter-spacing:.3em">
+  <p id="lgErr" style="color:var(--bad);font-size:13px;min-height:18px;margin:8px 0;text-align:center"></p>
+  <button class="btn primary" id="lgBtn" style="width:100%">Masuk</button>
+</form></div>
 
 <header class="top"><div class="top-in">
   <div class="brand"><div class="mark">IT</div>Laporan Harian IT</div><span class="who" id="who"></span>
@@ -216,6 +226,20 @@ main{overflow-x:hidden;overflow-x:clip}
   </div>
   <div class="tools"><button class="btn primary" id="dMail">Kirim email</button><a class="btn" id="dSheet" target="_blank" rel="noopener">Buka Google Sheets</a></div>
   <div class="dar" id="darBox"></div>
+  <div class="card" style="margin-top:14px;max-width:560px">
+    <h2 style="font-size:18px">Keamanan</h2>
+    <h3 style="font-size:15px;margin:10px 0 4px">Batas salah PIN</h3>
+    <p class="hint">Jika PIN salah sebanyak batas ini, login dikunci sementara.</p>
+    <div class="row c2"><label class="f">Batas salah PIN (kali)<input class="in" id="secMax" type="number" min="1" max="20" inputmode="numeric"></label><label class="f">Lama dikunci (menit)<input class="in" id="secLock" type="number" min="1" max="1440" inputmode="numeric"></label></div>
+    <button class="btn primary" id="secSave" style="margin-top:12px">Simpan batas</button>
+    <hr style="border:0;border-top:1px solid var(--line);margin:18px 0 6px">
+    <h3 style="font-size:15px;margin:10px 0 4px">Ganti PIN</h3>
+    <p class="hint">PIN dipakai untuk masuk aplikasi. Setelah diganti, perangkat lain perlu masuk ulang.</p>
+    <div class="row c2"><label class="f">PIN lama<input class="in" id="pinOld" type="password" inputmode="numeric" autocomplete="current-password"></label><label class="f">PIN baru<input class="in" id="pinNew" type="password" inputmode="numeric" autocomplete="new-password"></label></div>
+    <label class="f" style="margin-top:10px">Ulangi PIN baru<input class="in" id="pinNew2" type="password" inputmode="numeric" autocomplete="new-password"></label>
+    <button class="btn primary" id="pinSave" style="margin-top:12px">Simpan PIN baru</button>
+    <p class="hint" style="margin:12px 0 0">Lupa PIN? Buka Google Sheets, sheet <b>Pengaturan</b>, baris <b>PIN Login</b>.</p>
+  </div>
 </section>
 
 <section id="v-review" hidden>
@@ -243,10 +267,22 @@ const FIELDS=["decision","issues","plan","weekly","notes"], KOF=["decision","iss
 let INIT=null, R=null, PREV=null, LOGS=[], dirty=false, saving=false, autoT=null, editSeq=0;
 // Link Web App Apps Script (yang berakhiran /exec). Data diambil langsung dari Google Sheets lewat link ini.
 const API_URL="https://script.google.com/macros/s/AKfycbwRG6sTokhK1X0WQjIjrOYcM_pjLysyPiiTBgZktAo_mj_GWlyMkzB5BkOg7a4RVMBu/exec";
-const run=(fn,...a)=>fetch(API_URL,{method:"POST",credentials:"omit",redirect:"follow",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({fn,args:a})})
+let TOKEN=""; try{ TOKEN=localStorage.getItem("lhit-token")||""; }catch(e){}
+const call=(fn,a)=>fetch(API_URL,{method:"POST",credentials:"omit",redirect:"follow",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({fn,args:a,token:TOKEN})})
   .then(r=>{ if(!r.ok) throw new Error("Server tidak merespons ("+r.status+")"); return r.json(); })
   .then(j=>{ if(j.error) throw new Error(j.error); return j.result; })
   .catch(e=>{ throw new Error(/Failed to fetch|NetworkError/.test(e.message)?"Tidak bisa terhubung ke server. Periksa internet atau pengaturan deployment (Siapa saja).":e.message); });
+const run=(fn,...a)=>call(fn,a).catch(e=>{ if(/^LOGIN:/.test(e.message)){ showLogin(e.message.replace(/^LOGIN:\s*/,"")); } throw e; });
+function saveToken(t){ TOKEN=t||""; try{ t?localStorage.setItem("lhit-token",t):localStorage.removeItem("lhit-token"); }catch(e){} }
+function showLogin(msg){ saveToken(""); $("#loading").hidden=true; $("#login").hidden=false; $("#lgErr").textContent=msg||""; $("#lgPin").value=""; setTimeout(()=>$("#lgPin").focus(),60); }
+async function doLogin(){
+  const pin=$("#lgPin").value.trim(); $("#lgErr").textContent=""; if(!pin){ $("#lgErr").textContent="Masukkan PIN"; return; }
+  const b=$("#lgBtn"); b.disabled=true; b.textContent="Memeriksa…";
+  try{ const r=await call("login",[pin]); saveToken(r.token); $("#login").hidden=true; $("#loading").hidden=false; boot(); }
+  catch(e){ $("#lgErr").textContent=e.message; $("#lgPin").select(); }
+  b.disabled=false; b.textContent="Masuk";
+}
+function logout(){ saveToken(""); location.reload(); }
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad=n=>String(n).padStart(2,"0");
 const iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
@@ -265,8 +301,11 @@ const cleanLine=x=>String(x||"").replace(/^['"\s]*(\d+\s*[.)]|[-•*])\s*/,"").t
 
 /* ---------- load ---------- */
 async function boot(){
-  try{ INIT=await run("getInit"); }catch(e){ $("#loading").textContent="Gagal memuat: "+(e.message||e); return; }
-  $("#who").textContent=INIT.name||"";
+  if(!TOKEN){ showLogin(); return; }
+  try{ INIT=await run("getInit"); }catch(e){ if(!/^LOGIN:/.test(e.message)) $("#loading").textContent="Gagal memuat: "+(e.message||e); return; }
+  $("#who").innerHTML=esc(INIT.name||"")+' · <a href="#" id="logout" style="color:var(--accent)">Keluar</a>'; $("#logout").onclick=e=>{ e.preventDefault(); logout(); };
+  if(INIT.security){ $("#secMax").value=INIT.security.maxFail; $("#secLock").value=INIT.security.lockMin; }
+  if(INIT.pinDefault) setTimeout(()=>toast("PIN masih 1234. Segera ganti di tab Rekap > Ganti PIN"),1200);
   INIT.today=iso(new Date());   // tanggal hari ini mengikuti jam HP/laptop, bukan zona waktu server
   document.querySelector('.tab[data-v=review]').hidden=!INIT.isApprover;
   $("#dSheet").href=INIT.sheetUrl; $("#pName").value=INIT.name; $("#pTo").value=INIT.settings.to; $("#pCc").value=INIT.settings.cc;
@@ -444,6 +483,19 @@ $("#rList").onclick=async e=>{ const b=e.target.closest("[data-rv]"); if(!b) ret
   $("#rBack").onclick=loadReview;
   const go=async ok=>{ try{ await run("approve",id,ok,$("#apNote").value); toast(ok?"Laporan disetujui":"Permintaan revisi terkirim"); loadReview(); }catch(err){ toast(err.message||err); } };
   if($("#apOk")){ $("#apOk").onclick=()=>go(true); $("#apRev").onclick=()=>go(false); } };
+
+/* ---------- batas salah PIN ---------- */
+$("#secSave").onclick=async()=>{ const m=parseInt($("#secMax").value,10), l=parseInt($("#secLock").value,10);
+  if(!(m>=1&&m<=20)){ toast("Batas salah PIN harus 1 sampai 20"); return; } if(!(l>=1&&l<=1440)){ toast("Lama kunci harus 1 sampai 1440 menit"); return; }
+  const b=$("#secSave"); b.disabled=true;
+  try{ const r=await run("setSecurity",m,l); INIT.security=r; toast(`Tersimpan: dikunci ${r.lockMin} menit setelah ${r.maxFail}x salah PIN`); }catch(e){ toast(e.message); } b.disabled=false; };
+
+/* ---------- ganti PIN ---------- */
+$("#pinSave").onclick=async()=>{ const o=$("#pinOld").value.trim(), n=$("#pinNew").value.trim(), n2=$("#pinNew2").value.trim();
+  if(n.length<4){ toast("PIN baru minimal 4 karakter"); return; } if(n!==n2){ toast("Ulangi PIN baru tidak sama"); return; }
+  const b=$("#pinSave"); b.disabled=true;
+  try{ const r=await run("changePin",o,n); saveToken(r.token); ["pinOld","pinNew","pinNew2"].forEach(id=>$("#"+id).value=""); toast("PIN berhasil diganti"); INIT.pinDefault=false; }
+  catch(e){ toast(e.message); } b.disabled=false; };
 
 /* ---------- collapse checklist ---------- */
 function setChk(open){ $("#chkCard").classList.toggle("closed",!open); $("#chkTg").setAttribute("aria-expanded",open); try{ localStorage.setItem("lhit-chk",open?"1":"0"); }catch(e){} }
