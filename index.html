@@ -159,6 +159,22 @@ dialog.setdlg[open]{display:flex;flex-direction:column;animation:rise .25s ease-
 .set-sec h4{font-family:"IBM Plex Sans Condensed","Arial Narrow",sans-serif;font-size:16px;margin:0 0 6px}
 .sheet-btn{display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:var(--ink)}
 @media(max-width:640px){.tabs{order:3}.gear{margin-left:auto;width:34px;height:34px}.who{display:none}.top-in{flex-wrap:wrap}}
+.atts{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+@media(min-width:760px){.atts{grid-column:2/6}}
+.chip{display:inline-flex;align-items:center;gap:2px;max-width:100%;background:var(--paper);border:1px solid var(--line);border-radius:99px;padding:2px 4px 2px 10px;font-size:13px}
+.chip.up{opacity:.6}
+.chip-open{border:0;background:transparent;cursor:pointer;color:var(--ink);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 2px}
+.chip-x{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:15px;border-radius:99px;min-width:24px;height:24px}
+.chip-x.sure{background:var(--bad);color:#fff;font-size:12px;padding:0 8px}
+.sp{width:12px;height:12px;border:2px solid var(--accent);border-right-color:transparent;border-radius:50%;margin:0 6px;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.att-add{display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--accent);font-weight:600;cursor:pointer;padding:4px 10px;border-radius:99px;border:1px dashed var(--accent)}
+.att-add:hover{background:var(--accent-soft)}
+dialog.attdlg{padding:0;max-width:min(860px,calc(100vw - 24px));width:100%;max-height:calc(100dvh - 40px);overflow:hidden;display:none}
+dialog.attdlg[open]{display:flex;flex-direction:column}
+.att-body{padding:14px 16px 18px;overflow:auto;text-align:center}
+.att-body img{max-width:100%;max-height:70vh;border-radius:8px}
+.att-body iframe{width:100%;height:70vh;border:1px solid var(--line);border-radius:8px}
 [hidden]{display:none!important}
 @media(max-width:640px){.in,.task .in{font-size:16px}.tabs{width:100%;margin:0}.tab{flex:1;padding:6px 4px;font-size:13px}.actions .btn{flex:1}}
 </style>
@@ -284,6 +300,7 @@ dialog.setdlg[open]{display:flex;flex-direction:column;animation:rise .25s ease-
     </section>
   </div>
 </dialog>
+<dialog id="attDlg" class="attdlg"><div class="set-head"><h3 id="attName" style="font-size:16px;overflow-wrap:anywhere">Lampiran</h3><button class="x" id="attClose" aria-label="Tutup">×</button></div><div id="attBody" class="att-body"></div></dialog>
 <div class="toast" id="toast"><span id="toastTxt"></span><button id="toastBtn" hidden>Urungkan</button></div>
 
 <dialog id="cfDlg"><h3>Kirim laporan ke email atasan?</h3><ul class="cf" id="cfBody"></ul>
@@ -380,6 +397,7 @@ function renderTasks(){
       <input class="in" type="time" data-k="time" value="${esc(t.time||"")}"></div>
     <button class="x" data-del="${i}" title="Hapus">×</button>
     <div class="extra"><input class="in" data-k="user" list="dlUser" value="${esc(t.user||"")}" placeholder="User yang meminta"><input class="in" data-k="div" list="dlDiv" value="${esc(t.div||"")}" placeholder="Divisi / jabatan"><input class="in ket" data-k="ket" value="${esc(t.ket||"")}" placeholder="Keterangan (opsional)"></div>
+    <div class="atts">${(t.att||[]).map((a,k)=>`<span class="chip${a.uploading?" up":""}"><button class="chip-open" data-aopen="${i}:${k}" title="Lihat ${esc(a.name)}">${a.mime&&a.mime.indexOf("image/")===0?"🖼":"📄"} ${esc(a.name)}</button>${a.uploading?'<i class="sp"></i>':`<button class="chip-x" data-adel="${i}:${k}" aria-label="Hapus lampiran">×</button>`}</span>`).join("")}<label class="att-add" title="Tambah lampiran (foto/PDF, maks 10 MB)">📎 Lampiran<input type="file" hidden multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" data-att="${i}"></label></div>
     ${t.dari?`<div class="carry">Lanjutan dari ${esc(t.dari)}</div>`:""}</div>`).join(""):`<p class="hint">Belum ada aktivitas.</p>`;
   const d=R.tasks.filter(t=>t.status==="Selesai").length;
   $("#tally").innerHTML=R.tasks.length?`<span><b>${R.tasks.length}</b> aktivitas</span><span><b>${d}</b> selesai</span><span><b>${R.tasks.filter(t=>t.utama).length}</b> utama</span>`:"";
@@ -465,6 +483,7 @@ async function loadMine(){ $("#mList").innerHTML='<p class="hint">Memuat…</p>'
 $("#mMonth").onchange=loadMine;
 $("#mList").onclick=async e=>{
   const b=e.target.closest("[data-open]"); if(b){ show("write"); loadDate(b.dataset.open); return; }
+  const ha=e.target.closest("[data-hatt]"); if(ha){ openAttachment({id:ha.dataset.hatt,name:ha.dataset.hname}); return; }
   const v=e.target.closest("[data-view]"); if(!v) return;
   const d=document.querySelector(`[data-det="${v.dataset.view}"]`);
   if(!d.hidden){ d.hidden=true; v.textContent="Lihat"; return; }
@@ -477,7 +496,7 @@ $("#mList").onclick=async e=>{
 function detailHtml(r){
   if(!r) return '<p class="hint">Data tidak ditemukan.</p>';
   const st=s=>`<span class="pill ${s==="Selesai"?"ok":s==="Tertunda"?"bad":"warn"}">${esc(s)}</span>`;
-  const rows=(r.tasks||[]).map((t,i)=>`<tr><td>${i+1}</td><td>${esc(t.time||"–")}</td><td>${t.utama?"★ ":""}${esc(t.desc)}${t.ket?`<small>${esc(t.ket)}</small>`:""}</td><td>${esc(t.user||"–")}${t.div?`<small>${esc(t.div)}</small>`:""}</td><td>${st(t.status||"Selesai")}</td></tr>`).join("");
+  const rows=(r.tasks||[]).map((t,i)=>`<tr><td>${i+1}</td><td>${esc(t.time||"–")}</td><td>${t.utama?"★ ":""}${esc(t.desc)}${t.ket?`<small>${esc(t.ket)}</small>`:""}${(t.att||[]).length?`<div class="atts" style="margin-top:4px">${t.att.map(a=>`<span class="chip"><button class="chip-open" data-hatt="${esc(a.id)}" data-hname="${esc(a.name)}">${a.mime&&a.mime.indexOf("image/")===0?"🖼":"📄"} ${esc(a.name)}</button></span>`).join("")}</div>`:""}</td><td>${esc(t.user||"–")}${t.div?`<small>${esc(t.div)}</small>`:""}</td><td>${st(t.status||"Selesai")}</td></tr>`).join("");
   const ch=r.checks||[], cd=ch.filter(c=>c.done).length, ci=ch.filter(c=>c.issue||c.note);
   const bad=Object.entries(r.systems||{}).filter(([,v])=>v&&v!=="Normal");
   const field=(lbl,txt,ko)=>String(txt||"").trim()?`<div class="dfield"><b>${lbl}</b><p>${esc(txt)}</p>${ko?`<p class="ko">${esc(ko)}</p>`:""}</div>`:"";
@@ -513,6 +532,46 @@ $("#rList").onclick=async e=>{ const b=e.target.closest("[data-rv]"); if(!b) ret
   $("#rBack").onclick=loadReview;
   const go=async ok=>{ try{ await run("approve",id,ok,$("#apNote").value); toast(ok?"Laporan disetujui":"Permintaan revisi terkirim"); loadReview(); }catch(err){ toast(err.message||err); } };
   if($("#apOk")){ $("#apOk").onclick=()=>go(true); $("#apRev").onclick=()=>go(false); } };
+
+/* ---------- lampiran ---------- */
+function shrinkImage(file){ return new Promise((res,rej)=>{ const img=new Image(), url=URL.createObjectURL(file);
+  img.onload=()=>{ const max=1280, sc=Math.min(1,max/Math.max(img.width,img.height)), c=document.createElement("canvas");
+    c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc); c.getContext("2d").drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url);
+    res({data:c.toDataURL("image/jpeg",0.7).split(",")[1], mime:"image/jpeg", name:file.name.replace(/\.[^.]+$/,"")+".jpg"}); };
+  img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("Gambar tidak bisa dibaca")); }; img.src=url; }); }
+function readFile(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res({data:String(r.result).split(",")[1], mime:file.type||"application/octet-stream", name:file.name}); r.onerror=()=>rej(new Error("File tidak bisa dibaca")); r.readAsDataURL(file); }); }
+async function addAttachments(i,files){
+  const t=R.tasks[i]; if(!t) return; t.att=t.att||[]; const date=R.date;
+  for(const file of files){
+    const isImg=/^image\//.test(file.type) && !/svg/.test(file.type);
+    if(!isImg && file.size>10*1024*1024){ toast(file.name+" terlalu besar (maks 10 MB)"); continue; }
+    const tmp={name:file.name,mime:file.type,uploading:true}; t.att.push(tmp); renderTasks();
+    try{
+      const f=isImg?await shrinkImage(file):await readFile(file);
+      const r=await run("uploadAttachment",date,f.name,f.mime,f.data);
+      Object.assign(tmp,r); delete tmp.uploading; changed(); toast("Lampiran terunggah: "+r.name);
+    }catch(e){ t.att.splice(t.att.indexOf(tmp),1); toast("Gagal unggah: "+e.message); }
+    renderTasks();
+  }
+}
+async function openAttachment(a){
+  if(!a||!a.id) return;
+  const d=$("#attDlg"); $("#attName").textContent=a.name; $("#attBody").innerHTML='<p class="hint">Memuat lampiran…</p>'; d.showModal();
+  try{ const r=await run("viewAttachment",a.id), url=`data:${r.mime};base64,${r.data}`;
+    if(/^image\//.test(r.mime)) $("#attBody").innerHTML=`<img src="${url}" alt="${esc(r.name)}">`;
+    else{ const blob=await (await fetch(url)).blob(), bu=URL.createObjectURL(blob);
+      $("#attBody").innerHTML=(r.mime==="application/pdf"?`<iframe src="${bu}" title="${esc(r.name)}"></iframe>`:`<p class="hint">Pratinjau tidak tersedia untuk jenis file ini.</p>`)+`<a class="btn primary" href="${bu}" download="${esc(r.name)}" style="margin-top:10px;display:inline-block;text-decoration:none">Unduh ${esc(r.name)}</a>`; }
+  }catch(e){ $("#attBody").innerHTML=`<p class="hint" style="color:var(--bad)">Gagal memuat: ${esc(e.message)}</p>`; }
+}
+$("#tasks").addEventListener("change",e=>{ const inp=e.target.closest("[data-att]"); if(!inp) return; const files=[...inp.files]; inp.value=""; if(files.length) addAttachments(+inp.dataset.att,files); });
+$("#tasks").addEventListener("click",async e=>{
+  const o=e.target.closest("[data-aopen]"); if(o){ const [i,k]=o.dataset.aopen.split(":").map(Number); openAttachment((R.tasks[i].att||[])[k]); return; }
+  const x=e.target.closest("[data-adel]"); if(x){ const [i,k]=x.dataset.adel.split(":").map(Number), a=R.tasks[i].att[k];
+    if(x.dataset.sure!=="1"){ x.dataset.sure="1"; x.textContent="Hapus?"; x.classList.add("sure"); setTimeout(()=>{ if(x.isConnected){ x.dataset.sure=""; x.textContent="×"; x.classList.remove("sure"); } },3000); return; }
+    R.tasks[i].att.splice(k,1); renderTasks(); changed(); toast("Lampiran dihapus"); run("deleteAttachment",a.id).catch(()=>{}); }
+});
+$("#attClose").onclick=()=>$("#attDlg").close();
+$("#attDlg").addEventListener("click",e=>{ if(e.target.id==="attDlg") $("#attDlg").close(); });
 
 /* ---------- pengaturan ---------- */
 $("#setBtn").onclick=()=>{ const d=$("#setDlg"); if(INIT&&INIT.security){ $("#secMax").value=INIT.security.maxFail; $("#secLock").value=INIT.security.lockMin; } d.showModal(); };
