@@ -175,6 +175,16 @@ dialog.attdlg[open]{display:flex;flex-direction:column}
 .att-body{padding:14px 16px 18px;overflow:auto;text-align:center}
 .att-body img{max-width:100%;max-height:70vh;border-radius:8px}
 .att-body iframe{width:100%;height:70vh;border:1px solid var(--line);border-radius:8px}
+.ev-title{font:bold 16px Arial,sans-serif;margin:22px 0 6px;color:#111}
+.ev-item{padding:10px 0;border-top:1px solid #ddd}
+.ev-cap{font:bold 12px Arial,sans-serif;color:#111}.ev-sub{font:11px Arial,sans-serif;color:#555;margin:2px 0 6px}
+.ev-grid{display:flex;flex-wrap:wrap;gap:8px}
+.ev-img{width:220px;height:165px;padding:0;border:1px solid #ccc;border-radius:6px;background:#f2f2f2;cursor:zoom-in;overflow:hidden;display:grid;place-items:center}
+.ev-img img{width:100%;height:100%;object-fit:cover;display:block}
+.ev-ph{font:12px Arial,sans-serif;color:#888}
+.ev-doc{border:1px solid #ccc;background:#fff;border-radius:6px;padding:8px 12px;font:13px Arial,sans-serif;color:#111;cursor:pointer}
+.ev-note{font:12px Arial,sans-serif;color:#777;margin-top:8px}
+@media(max-width:640px){.ev-img{width:calc(50% - 4px);height:130px}}
 [hidden]{display:none!important}
 @media(max-width:640px){.in,.task .in{font-size:16px}.tabs{width:100%;margin:0}.tab{flex:1;padding:6px 4px;font-size:13px}.actions .btn{flex:1}}
 </style>
@@ -507,7 +517,20 @@ function detailHtml(r){
 }
 
 /* ---------- rekap / DAR ---------- */
-async function loadDar(){ $("#darBox").innerHTML='<p style="color:#666">Memuat…</p>'; const D=await run("getDar",$("#dDate").value,""); $("#darBox").innerHTML=darHtml(D)+(D.exists?"":'<p style="color:#B23A26;font-size:13px">Belum ada laporan tersimpan untuk tanggal ini.</p>'); }
+async function loadDar(){ $("#darBox").innerHTML='<p style="color:#666">Memuat…</p>'; const D=await run("getDar",$("#dDate").value,""); $("#darBox").innerHTML=darHtml(D)+(D.exists?"":'<p style="color:#B23A26;font-size:13px">Belum ada laporan tersimpan untuk tanggal ini.</p>')+evidenceHtml(D); loadEvidence(); }
+function evidenceHtml(D){
+  const ev=D.evidence||[]; if(!ev.length) return "";
+  return `<h3 class="ev-title">LAMPIRAN BUKTI PEKERJAAN</h3>`+ev.map(e=>`<div class="ev-item"><div class="ev-cap">${e.no}. ${esc(String(e.desc||"").toUpperCase())}</div>${(e.user||e.div)?`<div class="ev-sub">User: ${esc([e.user,e.div].filter(Boolean).join(" - "))}</div>`:""}
+    <div class="ev-grid">${e.att.map(a=>/^image\//.test(a.mime||"")?`<button class="ev-img" data-evid="${esc(a.id)}" data-evname="${esc(a.name)}" title="${esc(a.name)}"><span class="ev-ph">Memuat foto…</span></button>`:`<button class="ev-doc" data-evid="${esc(a.id)}" data-evname="${esc(a.name)}">📄 ${esc(a.name)}</button>`).join("")}</div></div>`).join("")
+    +`<p class="ev-note">Foto bukti ini juga tampil di isi email dan PDF yang dikirim ke atasan.</p>`;
+}
+async function loadEvidence(){
+  for(const b of document.querySelectorAll(".ev-img[data-evid]")){
+    try{ const r=await run("viewAttachment",b.dataset.evid); b.innerHTML=`<img src="data:${r.mime};base64,${r.data}" alt="${esc(r.name)}">`; }
+    catch(e){ b.innerHTML='<span class="ev-ph">Gagal memuat</span>'; }
+  }
+}
+$("#darBox").addEventListener("click",e=>{ const b=e.target.closest("[data-evid]"); if(b) openAttachment({id:b.dataset.evid,name:b.dataset.evname}); });
 function darHtml(D){ const cell="border:1px solid #222;padding:6px 8px;";
   return `<h2 style="text-align:center;font-family:Arial;margin-bottom:10px">DAILY ACTIVITY REPORT</h2><table style="font:bold 13px Arial;margin-bottom:10px"><tr><td style="padding-right:14px">NAME</td><td>: ${esc(D.name)}</td></tr><tr><td>DIVISION</td><td>: ${esc(D.division)}</td></tr><tr><td>DATE</td><td>: ${esc(D.dateLabel)}</td></tr></table>
   <table style="border-collapse:collapse;width:100%;min-width:760px;table-layout:fixed"><tr>${D.cols.map((c,i)=>`<th style="${cell}background:${i===4?"#9BC2E6":"#A9D08E"}">${esc(c.h)}</th>`).join("")}</tr>
