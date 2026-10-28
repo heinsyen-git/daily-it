@@ -185,6 +185,10 @@ dialog.attdlg[open]{display:flex;flex-direction:column}
 .ev-doc{border:1px solid #ccc;background:#fff;border-radius:6px;padding:8px 12px;font:13px Arial,sans-serif;color:#111;cursor:pointer}
 .ev-note{font:12px Arial,sans-serif;color:#777;margin-top:8px}
 @media(max-width:640px){.ev-img{width:calc(50% - 4px);height:130px}}
+.lockbar{display:flex;gap:10px 12px;align-items:center;flex-wrap:wrap;background:var(--warn-soft);border:1px solid var(--warn);border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:14px}
+.lockbar #lockTxt{flex:1;min-width:220px}.lk-btns{display:flex;gap:8px;flex-wrap:wrap}.lk-ic{font-size:18px}
+body.ro #v-write .card{opacity:.6;pointer-events:none}
+body.ro #actions #saveBtn,body.ro #actions #sendBtn{opacity:.5;pointer-events:none}
 [hidden]{display:none!important}
 @media(max-width:640px){.in,.task .in{font-size:16px}.tabs{width:100%;margin:0}.tab{flex:1;padding:6px 4px;font-size:13px}.actions .btn{flex:1}}
 </style>
@@ -214,6 +218,7 @@ dialog.attdlg[open]{display:flex;flex-direction:column}
 
 <main>
 <section id="v-write">
+  <div class="lockbar" id="lockBar" hidden><span class="lk-ic" aria-hidden="true">🔒</span><div id="lockTxt"></div><div class="lk-btns"><button class="btn sm" id="lkReload">Muat versi terbaru</button><button class="btn sm primary" id="lkTake">Edit di sini</button></div></div>
   <div id="banner"></div>
   <div class="head">
     <div>
@@ -325,7 +330,7 @@ let INIT=null, R=null, PREV=null, LOGS=[], dirty=false, saving=false, autoT=null
 // Link Web App Apps Script (yang berakhiran /exec). Data diambil langsung dari Google Sheets lewat link ini.
 const API_URL="https://script.google.com/macros/s/AKfycbwRG6sTokhK1X0WQjIjrOYcM_pjLysyPiiTBgZktAo_mj_GWlyMkzB5BkOg7a4RVMBu/exec";
 let TOKEN=""; try{ TOKEN=localStorage.getItem("lhit-token")||""; }catch(e){}
-const call=(fn,a)=>fetch(API_URL,{method:"POST",credentials:"omit",redirect:"follow",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({fn,args:a,token:TOKEN})})
+const call=(fn,a,keep)=>fetch(API_URL,{method:"POST",credentials:"omit",redirect:"follow",keepalive:!!keep,headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({fn,args:a,token:TOKEN})})
   .then(r=>{ if(!r.ok) throw new Error("Server tidak merespons ("+r.status+")"); return r.json(); })
   .then(j=>{ if(j.error) throw new Error(j.error); return j.result; })
   .catch(e=>{ throw new Error(/Failed to fetch|NetworkError/.test(e.message)?"Tidak bisa terhubung ke server. Periksa internet atau pengaturan deployment (Siapa saja).":e.message); });
@@ -370,17 +375,43 @@ async function boot(){
   try{ $("#koAuto").checked=localStorage.getItem("lhit-ko")==="1"; }catch(e){}
   await loadDate(INIT.today); $("#loading").hidden=true;
 }
-async function loadDate(date){
+/* ---------- kunci edit: satu jendela/perangkat yang boleh mengubah laporan ---------- */
+const SID=Math.random().toString(36).slice(2)+Date.now().toString(36);
+const DEV=(()=>{ const u=navigator.userAgent; const os=/Android/.test(u)?"HP Android":/iPhone|iPad/.test(u)?"iPhone/iPad":/Windows/.test(u)?"Windows":/Mac/.test(u)?"Mac":"perangkat lain"; const br=/Edg\//.test(u)?"Edge":/Chrome\//.test(u)?"Chrome":/Firefox\//.test(u)?"Firefox":/Safari\//.test(u)?"Safari":""; return (os+" "+br).trim(); })();
+let RO=false, LOCKED_DATE=null, hbT=null;
+function setReadOnly(on,info){
+  RO=on; document.body.classList.toggle("ro",on); clearTimeout(autoT);
+  const b=$("#lockBar");
+  if(!on){ b.hidden=true; return; }
+  b.hidden=false;
+  $("#lockTxt").innerHTML=info||"Laporan ini sedang dibuka di jendela lain.";
+}
+async function acquire(date,force){
+  try{ const r=await run("lock",date,SID,DEV,!!force);
+    if(r.ok){ LOCKED_DATE=date; setReadOnly(false); return true; }
+    setReadOnly(true,`<b>Hanya baca.</b> Laporan ini sedang diedit di <b>${esc(r.dev)}</b> sejak ${esc(r.since)}. Supaya data tidak tertimpa, perubahan di jendela ini dikunci.`); return false;
+  }catch(e){ return true; }
+}
+function heartbeat(){ clearInterval(hbT); hbT=setInterval(async()=>{ if(!R||RO||document.hidden) return;
+  try{ const r=await run("lock",R.date,SID,DEV,false);
+    if(!r.ok){ setReadOnly(true,`<b>Diambil alih.</b> Laporan ini sekarang diedit di <b>${esc(r.dev)}</b>. Jendela ini menjadi hanya baca.`); }
+  }catch(e){} },45000); }
+function releaseLock(keep){ if(LOCKED_DATE&&!RO){ call("unlock",[LOCKED_DATE,SID],keep).catch(()=>{}); LOCKED_DATE=null; } }
+async function reloadLatest(){ dirty=false; clearTimeout(autoT); await loadDate(R.date); toast("Versi terbaru dimuat"); }
+async function takeOver(){ const ok=await acquire(R.date,true); if(ok){ dirty=false; await loadDate(R.date,true); toast("Sekarang Anda yang mengedit laporan ini"); } }
+
+async function loadDate(date,skipLock){
   $("#st").textContent="Memuat…";
+  if(!skipLock){ if(LOCKED_DATE&&LOCKED_DATE!==date) releaseLock(); await acquire(date,false); }
   const g=await run("getReport",date); PREV=g.prev; LOGS=g.logs||[];
   if(g.report) R=g.report;
-  else R={date,name:INIT.name,status:"",lembur:{},systems:{},decision:"",issues:"",plan:"",notes:"",ko:{},
+  else R={date,version:0,name:INIT.name,status:"",lembur:{},systems:{},decision:"",issues:"",plan:"",notes:"",ko:{},
     weekly:PREV?PREV.weekly:"", tasks:PREV?PREV.tasks.filter(t=>t.status!=="Selesai").map(t=>({...t,dari:t.dari||PREV.date})):[],
     checks:INIT.settings.checklist.map(l=>({label:l,done:false,at:"",issue:false,note:""}))};
   R.date=date; R.ko=R.ko||{}; R.lembur=R.lembur||{}; SYSTEMS.forEach(s=>R.systems[s]=R.systems[s]||"Normal");
   $("#date").value=date; FIELDS.forEach(f=>document.querySelector(`[data-f=${f}]`).value=R[f]||"");
   ["mulai","selesai","alasan"].forEach(k=>$("#l"+k[0].toUpperCase()+k.slice(1)).value=R.lembur[k]||"");
-  render(); dirty=false; status();
+  render(); dirty=false; status(); heartbeat();
 }
 function render(){ renderBanner(); renderSys(); renderChecks(); renderTasks(); renderKo(); $("#otBox").hidden=!isWeekend(R.date); $("#otDur").textContent=hours(R.lembur.mulai,R.lembur.selesai)?hours(R.lembur.mulai,R.lembur.selesai)+" jam":""; }
 function renderBanner(){
@@ -415,12 +446,13 @@ function renderTasks(){
   $("#dlUser").innerHTML=[...us.values()].map(t=>`<option value="${esc(t.user)}">${esc(t.div||"")}</option>`).join(""); $("#dlDiv").innerHTML=[...dv].map(x=>`<option value="${esc(x)}">`).join("");
 }
 function renderKo(){ KOF.forEach(f=>{ const el=document.querySelector(`[data-ko=${f}]`); const k=R.ko[f]; el.hidden=!(k&&(R[f]||"").trim()); el.textContent=k||""; }); }
-function status(){ const s=$("#st"); s.classList.toggle("dirty",dirty); s.textContent=saving?"Menyimpan…":dirty?"Ada perubahan, tersimpan otomatis…":R.status?("Tersimpan di Google Sheets ("+R.status+")"):"Belum disimpan"; $("#sendBtn").textContent=R.status==="Terkirim"?"Kirim ulang":"Kirim ke atasan"; }
-function changed(){ dirty=true; editSeq++; status(); clearTimeout(autoT); autoT=setTimeout(()=>save(false,true),3000); }
+function status(){ const s=$("#st"); s.classList.toggle("dirty",dirty); s.textContent=RO?"Hanya baca":saving?"Menyimpan…":dirty?"Ada perubahan, tersimpan otomatis…":R.status?("Tersimpan di Google Sheets ("+R.status+")"):"Belum disimpan"; $("#sendBtn").textContent=R.status==="Terkirim"?"Kirim ulang":"Kirim ke atasan"; }
+function changed(){ if(RO){ toast("Hanya baca: laporan ini sedang diedit di jendela lain"); return; } dirty=true; editSeq++; status(); clearTimeout(autoT); autoT=setTimeout(()=>save(false,true),2000); }
 
 /* ---------- save ---------- */
-function payload(){ return {...R, changed:true}; }
+function payload(){ return {...R, changed:true, sid:SID, dev:DEV}; }
 async function save(submit,silent,sendEmail){
+  if(RO){ toast("Hanya baca: laporan ini sedang diedit di jendela lain"); return; }
   if(saving){ clearTimeout(autoT); autoT=setTimeout(()=>save(submit,silent,sendEmail),1500); return; }
   if(submit){
     if(!R.tasks.length){ toast("Tambahkan minimal satu aktivitas"); return; }
@@ -430,11 +462,16 @@ async function save(submit,silent,sendEmail){
   try{
     const p=payload(); p.sendEmail=!!sendEmail;
     const g=await run("saveReport",p,!!submit);
-    if(g.report){ ["status","sent","approvedBy","approvedAt","bossNote","id"].forEach(k=>R[k]=g.report[k]); LOGS=g.logs||[]; }
+    if(g.report){ ["status","sent","approvedBy","approvedAt","bossNote","id","version"].forEach(k=>R[k]=g.report[k]); LOGS=g.logs||[]; }
     if(seq===editSeq) dirty=false;
     renderBanner();
     if(!silent) toast(submit?(g.mail&&g.mail.ok?"Email laporan terkirim ke atasan":"Email gagal: "+((g.mail&&g.mail.error)||"tidak diketahui")):"Tersimpan di Google Sheets");
-  }catch(e){ toast("Gagal menyimpan: "+(e.message||e)); }
+  }catch(e){
+    const m=e.message||String(e);
+    if(/^TERKUNCI:/.test(m)) setReadOnly(true,"<b>Hanya baca.</b> "+esc(m.replace(/^TERKUNCI:\s*/,"")));
+    else if(/^KONFLIK:/.test(m)) setReadOnly(true,"<b>Laporan sudah berubah di tempat lain.</b> Supaya tidak saling menimpa, muat versi terbaru dulu, lalu lanjutkan mengisi.");
+    else toast("Gagal menyimpan: "+m);
+  }
   saving=false; status();
 }
 
@@ -450,7 +487,7 @@ function show(v){ const order=["write","mine","dar","review"], from=order.indexO
   if(v!==curV){ const el=$("#v-"+v); el.classList.remove("vin-r","vin-l"); void el.offsetWidth; el.classList.add(to>from?"vin-r":"vin-l");
     el.addEventListener("animationend",function f(ev){ if(ev.target===el){ el.classList.remove("vin-r","vin-l"); el.removeEventListener("animationend",f); } }); }
   curV=v; moveInd(); $("#actions").hidden=v!=="write"; if(v==="mine") loadMine(); if(v==="dar") loadDar(); if(v==="review") loadReview(); window.scrollTo(0,0); }
-$("#date").onchange=async e=>{ if(dirty) await save(false,true); loadDate(e.target.value); };
+$("#date").onchange=async e=>{ if(dirty&&!RO) await save(false,true); loadDate(e.target.value); };
 $("#sys").onclick=e=>{ const b=e.target.closest(".sys"); if(!b) return; const s=b.dataset.sys; R.systems[s]=ST3[(ST3.indexOf(R.systems[s])+1)%3]; renderSys(); changed(); };
 $("#checks").onchange=e=>{ const t=e.target;
   if(t.dataset.ci!=null){ const c=R.checks[+t.dataset.ci]; c.done=t.checked; c.at=c.done?nowHM():""; renderChecks(); changed(); }
@@ -641,6 +678,10 @@ function tick(){
   setTimeout(tick,1000-n.getMilliseconds()+10);
 }
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&INIT&&R&&!dirty&&iso(new Date())!==INIT.today&&R.date===INIT.today){ INIT.today=iso(new Date()); loadDate(INIT.today); toast("Hari sudah berganti, laporan baru siap"); } });
+$("#lkReload").onclick=async()=>{ await acquire(R.date,false); await reloadLatest(); };
+$("#lkTake").onclick=()=>takeOver();
+document.addEventListener("visibilitychange",()=>{ if(document.hidden&&dirty&&!RO&&!saving) save(false,true); if(!document.hidden&&R&&RO) acquire(R.date,false).then(ok=>{ if(ok) reloadLatest(); }); });
+addEventListener("pagehide",()=>{ if(dirty&&!RO){ const p=payload(); call("saveReport",[p,false],true).catch(()=>{}); } releaseLock(true); });
 tick(); boot();
 </script>
 </body>
