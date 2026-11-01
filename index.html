@@ -189,6 +189,9 @@ dialog.attdlg[open]{display:flex;flex-direction:column}
 .lockbar #lockTxt{flex:1;min-width:220px}.lk-btns{display:flex;gap:8px;flex-wrap:wrap}.lk-ic{font-size:18px}
 body.ro #v-write .card{opacity:.6;pointer-events:none}
 body.ro #actions #saveBtn,body.ro #actions #sendBtn{opacity:.5;pointer-events:none}
+.brand .mark{position:relative}
+body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3px;width:9px;height:9px;border-radius:50%;background:#E3A008;border:2px solid #fff;animation:syncp 1s ease-in-out infinite}
+@keyframes syncp{50%{transform:scale(.7);opacity:.6}}
 [hidden]{display:none!important}
 @media(max-width:640px){.in,.task .in{font-size:16px}.tabs{width:100%;margin:0}.tab{flex:1;padding:6px 4px;font-size:13px}.actions .btn{flex:1}}
 </style>
@@ -344,7 +347,7 @@ async function doLogin(){
   catch(e){ $("#lgErr").textContent=e.message; $("#lgPin").select(); }
   b.disabled=false; b.textContent="Masuk";
 }
-function logout(){ saveToken(""); location.reload(); }
+function logout(){ saveToken(""); try{ localStorage.removeItem(CKEY); }catch(e){} location.reload(); }
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad=n=>String(n).padStart(2,"0");
 const iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
@@ -362,19 +365,51 @@ function guessCat(v){ const l=" "+v.toLowerCase()+" ";
 const cleanLine=x=>String(x||"").replace(/^['"\s]*(\d+\s*[.)]|[-•*])\s*/,"").trim();
 
 /* ---------- load ---------- */
-async function boot(){
-  if(!TOKEN){ showLogin(); return; }
-  try{ INIT=await run("getInit"); }catch(e){ if(!/^LOGIN:/.test(e.message)) $("#loading").textContent="Gagal memuat: "+(e.message||e); return; }
-  $("#who").textContent=INIT.name||"";
+/* ---------- cache tampilan: tampil seketika, diperbarui di latar belakang ---------- */
+const CKEY="lhit-cache";
+function cacheGet(){ try{ const c=JSON.parse(localStorage.getItem(CKEY)||"null"); if(c&&c.token===TOKEN&&Date.now()-c.at<7*864e5) return c; }catch(e){} return {token:TOKEN,at:Date.now(),init:null,rep:{},list:{},dar:{}}; }
+let CACHE=null;
+function cacheSave(){ try{ CACHE.at=Date.now(); const ks=Object.keys(CACHE.rep).sort().slice(-14); const rep={}; ks.forEach(k=>rep[k]=CACHE.rep[k]); CACHE.rep=rep; localStorage.setItem(CKEY,JSON.stringify(CACHE)); }catch(e){} }
+function syncing(on){ document.body.classList.toggle("syncing",!!on); }
+function applyInit(init){
+  INIT=init; $("#who").textContent=INIT.name||"";
   if(INIT.security){ $("#secMax").value=INIT.security.maxFail; $("#secLock").value=INIT.security.lockMin; }
-  if(INIT.pinDefault) setTimeout(()=>toast("PIN masih 1234. Segera ganti di tab Rekap > Ganti PIN"),1200);
-  INIT.today=iso(new Date());   // tanggal hari ini mengikuti jam HP/laptop, bukan zona waktu server
+  INIT.today=iso(new Date());   // tanggal hari ini mengikuti jam HP/laptop
   document.querySelector('.tab[data-v=review]').hidden=!INIT.isApprover;
   $("#dSheet").href=INIT.sheetUrl; $("#pName").value=INIT.name; $("#pTo").value=INIT.settings.to; $("#pCc").value=INIT.settings.cc;
-  const mo=INIT.today.slice(0,7); $("#mMonth").value=mo; $("#rMonth").value=mo; $("#dDate").value=INIT.today;
-  try{ $("#koAuto").checked=localStorage.getItem("lhit-ko")==="1"; }catch(e){}
-  await loadDate(INIT.today); $("#loading").hidden=true;
 }
+async function boot(){
+  if(!TOKEN){ showLogin(); return; }
+  CACHE=cacheGet(); const today=iso(new Date()), mo=today.slice(0,7);
+  const fromCache=!!(CACHE.init&&CACHE.rep[today]);
+  if(fromCache){ applyInit(CACHE.init); setupDates(); applyReport(today,CACHE.rep[today]); STALE=true; $("#loading").hidden=true; }
+  syncing(true);
+  let B; try{ B=await run("getBundle",today,mo,SID,DEV); }
+  catch(e){ syncing(false); if(/Fungsi tidak dikenal/.test(e.message)) return bootOld(); if(!/^LOGIN:/.test(e.message)){ if(fromCache) toast("Gagal memperbarui data: "+e.message); else $("#loading").textContent="Gagal memuat: "+(e.message||e); } return; }
+  syncing(false);
+  CACHE.init=B.init; CACHE.rep[today]=B.report; if(B.list) CACHE.list[mo]=B.list; if(B.dar) CACHE.dar[today]=B.dar; cacheSave();
+  applyInit(B.init); if(!fromCache) setupDates();
+  if(INIT.pinDefault) setTimeout(()=>toast("PIN masih 1234. Segera ganti di tab Rekap > Ganti PIN"),1200);
+  if(B.lock&&B.lock.ok===false) setReadOnly(true,`<b>Hanya baca.</b> Laporan ini sedang diedit di <b>${esc(B.lock.dev)}</b> sejak ${esc(B.lock.since)}. Supaya data tidak tertimpa, perubahan di jendela ini dikunci.`);
+  else { LOCKED_DATE=today; setReadOnly(false); }
+  freshReport(today,B.report);
+  $("#loading").hidden=true; heartbeat();
+  if(curV==="mine") loadMine(); if(curV==="dar") loadDar();
+}
+async function bootOld(){   // cadangan jika Code.gs belum diperbarui
+  try{ INIT=await run("getInit"); }catch(e){ if(!/^LOGIN:/.test(e.message)) $("#loading").textContent="Gagal memuat: "+(e.message||e); return; }
+  applyInit(INIT); setupDates(); await loadDate(INIT.today); $("#loading").hidden=true;
+}
+function setupDates(){ const mo=INIT.today.slice(0,7); $("#mMonth").value=mo; $("#rMonth").value=mo; $("#dDate").value=INIT.today; try{ $("#koAuto").checked=localStorage.getItem("lhit-ko")==="1"; }catch(e){} }
+/* data segar dari server: ganti tampilan jika belum ada ketikan; jika sudah ada ketikan, pastikan versinya sama */
+function freshReport(date,g){
+  if(!R||R.date!==date){ applyReport(date,g); STALE=false; return; }
+  if(!dirty){ applyReport(date,g); }
+  else if(g.report&&+g.report.version!==+(R.version||0)){ setReadOnly(true,"<b>Laporan sudah berubah di tempat lain.</b> Muat versi terbaru dulu, lalu lanjutkan mengisi."); }
+  STALE=false; if(FRESH_RES){ FRESH_RES(); FRESH_RES=null; }
+}
+let STALE=false, FRESH_RES=null;
+const waitFresh=()=>STALE?new Promise(r=>{ FRESH_RES=r; }):Promise.resolve();
 /* ---------- kunci edit: satu jendela/perangkat yang boleh mengubah laporan ---------- */
 const SID=Math.random().toString(36).slice(2)+Date.now().toString(36);
 const DEV=(()=>{ const u=navigator.userAgent; const os=/Android/.test(u)?"HP Android":/iPhone|iPad/.test(u)?"iPhone/iPad":/Windows/.test(u)?"Windows":/Mac/.test(u)?"Mac":"perangkat lain"; const br=/Edg\//.test(u)?"Edge":/Chrome\//.test(u)?"Chrome":/Firefox\//.test(u)?"Firefox":/Safari\//.test(u)?"Safari":""; return (os+" "+br).trim(); })();
@@ -400,18 +435,28 @@ function releaseLock(keep){ if(LOCKED_DATE&&!RO){ call("unlock",[LOCKED_DATE,SID
 async function reloadLatest(){ dirty=false; clearTimeout(autoT); await loadDate(R.date); toast("Versi terbaru dimuat"); }
 async function takeOver(){ const ok=await acquire(R.date,true); if(ok){ dirty=false; await loadDate(R.date,true); toast("Sekarang Anda yang mengedit laporan ini"); } }
 
-async function loadDate(date,skipLock){
-  $("#st").textContent="Memuat…";
-  if(!skipLock){ if(LOCKED_DATE&&LOCKED_DATE!==date) releaseLock(); await acquire(date,false); }
-  const g=await run("getReport",date); PREV=g.prev; LOGS=g.logs||[];
-  if(g.report) R=g.report;
+function applyReport(date,g){
+  PREV=g.prev; LOGS=g.logs||[];
+  if(g.report) R=JSON.parse(JSON.stringify(g.report));
   else R={date,version:0,name:INIT.name,status:"",lembur:{},systems:{},decision:"",issues:"",plan:"",notes:"",ko:{},
     weekly:PREV?PREV.weekly:"", tasks:PREV?PREV.tasks.filter(t=>t.status!=="Selesai").map(t=>({...t,dari:t.dari||PREV.date})):[],
     checks:INIT.settings.checklist.map(l=>({label:l,done:false,at:"",issue:false,note:""}))};
-  R.date=date; R.ko=R.ko||{}; R.lembur=R.lembur||{}; SYSTEMS.forEach(s=>R.systems[s]=R.systems[s]||"Normal");
+  R.date=date; R.ko=R.ko||{}; R.lembur=R.lembur||{}; R.systems=R.systems||{}; SYSTEMS.forEach(s=>R.systems[s]=R.systems[s]||"Normal");
   $("#date").value=date; FIELDS.forEach(f=>document.querySelector(`[data-f=${f}]`).value=R[f]||"");
   ["mulai","selesai","alasan"].forEach(k=>$("#l"+k[0].toUpperCase()+k.slice(1)).value=R.lembur[k]||"");
-  render(); dirty=false; status(); heartbeat();
+  render(); dirty=false; status();
+}
+async function loadDate(date,skipLock){
+  if(!CACHE) CACHE=cacheGet();
+  const cached=CACHE.rep[date];
+  if(cached){ applyReport(date,cached); STALE=true; } else $("#st").textContent="Memuat…";
+  if(!skipLock&&LOCKED_DATE&&LOCKED_DATE!==date) releaseLock();
+  syncing(true);
+  try{ const [ok,g]=await Promise.all([skipLock?Promise.resolve(true):acquire(date,false), run("getReport",date)]);   // kunci & data diambil bersamaan
+    CACHE.rep[date]=g; cacheSave(); freshReport(date,g); }
+  catch(e){ STALE=false; toast("Gagal memuat: "+e.message); }
+  finally{ syncing(false); }
+  heartbeat();
 }
 function render(){ renderBanner(); renderSys(); renderChecks(); renderTasks(); renderKo(); $("#otBox").hidden=!isWeekend(R.date); $("#otDur").textContent=hours(R.lembur.mulai,R.lembur.selesai)?hours(R.lembur.mulai,R.lembur.selesai)+" jam":""; }
 function renderBanner(){
@@ -452,6 +497,7 @@ function changed(){ if(RO){ toast("Hanya baca: laporan ini sedang diedit di jend
 /* ---------- save ---------- */
 function payload(){ return {...R, changed:true, sid:SID, dev:DEV}; }
 async function save(submit,silent,sendEmail){
+  await waitFresh();
   if(RO){ toast("Hanya baca: laporan ini sedang diedit di jendela lain"); return; }
   if(saving){ clearTimeout(autoT); autoT=setTimeout(()=>save(submit,silent,sendEmail),1500); return; }
   if(submit){
@@ -463,6 +509,10 @@ async function save(submit,silent,sendEmail){
     const p=payload(); p.sendEmail=!!sendEmail;
     const g=await run("saveReport",p,!!submit);
     if(g.report){ ["status","sent","approvedBy","approvedAt","bossNote","id","version"].forEach(k=>R[k]=g.report[k]); LOGS=g.logs||[]; }
+    try{ if(!CACHE) CACHE=cacheGet(); CACHE.rep[R.date]={report:JSON.parse(JSON.stringify(R)),prev:PREV,logs:LOGS}; 
+      const mk=R.date.slice(0,7), L=CACHE.list[mk]||(CACHE.list[mk]=[]), row={id:R.id||R.date,date:R.date,status:R.status,lembur:String(hours(R.lembur.mulai,R.lembur.selesai)||0),tasks:R.tasks.length,done:R.tasks.filter(t=>t.status==="Selesai").length,approvedBy:R.approvedBy||"",approvedAt:R.approvedAt||""};
+      const ix=L.findIndex(x=>x.date===R.date); if(ix>=0) Object.assign(L[ix],row); else { L.push(row); L.sort((x,y)=>y.date.localeCompare(x.date)); }
+      cacheSave(); }catch(_){}
     if(seq===editSeq) dirty=false;
     renderBanner();
     if(!silent) toast(submit?(g.mail&&g.mail.ok?"Email laporan terkirim ke atasan":"Email gagal: "+((g.mail&&g.mail.error)||"tidak diketahui")):"Tersimpan di Google Sheets");
@@ -525,7 +575,10 @@ $("#cfYes").onclick=()=>{ $("#cfDlg").close(); save(true,false,true); };
 
 /* ---------- riwayat ---------- */
 const pill=s=>`<span class="pill ${s==="Disetujui"?"ok":s==="Perlu revisi"?"bad":s==="Draf"?"":"warn"}">${esc(s)}</span>`;
-async function loadMine(){ $("#mList").innerHTML='<p class="hint">Memuat…</p>'; const l=await run("listReports",$("#mMonth").value,"mine");
+async function loadMine(){ const mo=$("#mMonth").value; if(!CACHE) CACHE=cacheGet();
+  if(CACHE.list[mo]) renderMine(CACHE.list[mo]); else $("#mList").innerHTML='<p class="hint">Memuat…</p>';
+  syncing(true); try{ const l=await run("listReports",mo,"mine"); CACHE.list[mo]=l; cacheSave(); if($("#mMonth").value===mo) renderMine(l); }catch(e){ toast("Gagal memuat riwayat: "+e.message); } finally{ syncing(false); } }
+function renderMine(l){
   $("#mList").innerHTML=l.length?l.map(r=>`<div class="item"><div><h3>${esc(fmtLong(r.date))} ${pill(r.status)}${r.lembur?`<span class="pill ot">Lembur ${esc(r.lembur)} jam</span>`:""}</h3><p>${r.tasks} aktivitas, ${r.done} selesai${r.approvedBy?`. Disetujui ${esc(r.approvedBy)}`:""}</p></div><button class="btn sm" data-view="${r.date}">Lihat</button><button class="btn sm primary" data-open="${r.date}">Ubah</button><div class="det" data-det="${r.date}" hidden></div></div>`).join(""):'<p class="hint">Belum ada laporan.</p>'; }
 $("#mMonth").onchange=loadMine;
 $("#mList").onclick=async e=>{
@@ -554,7 +607,10 @@ function detailHtml(r){
 }
 
 /* ---------- rekap / DAR ---------- */
-async function loadDar(){ $("#darBox").innerHTML='<p style="color:#666">Memuat…</p>'; const D=await run("getDar",$("#dDate").value,""); $("#darBox").innerHTML=darHtml(D)+(D.exists?"":'<p style="color:#B23A26;font-size:13px">Belum ada laporan tersimpan untuk tanggal ini.</p>')+evidenceHtml(D); loadEvidence(); }
+function renderDar(D){ $("#darBox").innerHTML=darHtml(D)+(D.exists?"":'<p style="color:#B23A26;font-size:13px">Belum ada laporan tersimpan untuk tanggal ini.</p>')+evidenceHtml(D); loadEvidence(); }
+async function loadDar(){ const d=$("#dDate").value; if(!CACHE) CACHE=cacheGet();
+  if(CACHE.dar[d]) renderDar(CACHE.dar[d]); else $("#darBox").innerHTML='<p style="color:#666">Memuat…</p>';
+  syncing(true); try{ const D=await run("getDar",d,""); CACHE.dar[d]=D; cacheSave(); if($("#dDate").value===d) renderDar(D); }catch(e){ toast("Gagal memuat rekap: "+e.message); } finally{ syncing(false); } }
 function evidenceHtml(D){
   const ev=D.evidence||[]; if(!ev.length) return "";
   return `<h3 class="ev-title">LAMPIRAN BUKTI PEKERJAAN</h3>`+ev.map(e=>`<div class="ev-item"><div class="ev-cap">${e.no}. ${esc(String(e.desc||"").toUpperCase())}</div>${(e.user||e.div)?`<div class="ev-sub">User: ${esc([e.user,e.div].filter(Boolean).join(" - "))}</div>`:""}
