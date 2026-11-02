@@ -805,20 +805,37 @@ const dmyLong=iso=>{ try{ return new Date(iso+"T00:00:00").toLocaleDateString("i
 async function loadMemos(){ $("#memoEdit").hidden=true; $("#memoList").hidden=false;
   if(!CACHE) CACHE=cacheGet(); if(CACHE.memos) renderMemos(CACHE.memos);
   try{ const l=await run("listMemos"); CACHE.memos=l; cacheSave(); renderMemos(l); }catch(e){ if(!CACHE.memos) $("#mmList").innerHTML=`<p class="hint" style="color:var(--bad)">Gagal memuat: ${esc(e.message)}</p>`; } }
-function renderMemos(l){ MEMOS=l;
+function renderMemos(l){ MEMOS=l; setTimeout(()=>prefetchMemos(l),300);
   $("#mmList").innerHTML=l.length?l.map(m=>`<div class="item"><div><h3>${esc(m.no)} <span class="pill ${m.status==="Batal"?"bad":m.status==="Final"?"ok":""}">${esc(m.status)}</span></h3><p>${esc(m.title)} · ${esc(fmtLong(m.date))}</p></div><button class="btn sm" data-mprint="${esc(m.id)}">🖨 Cetak</button><button class="btn sm primary" data-mopen="${esc(m.id)}">Buka</button></div>`).join(""):'<p class="hint">Belum ada memo. Klik <b>+ Buat memo baru</b>.</p>'; }
 $("#mmList").onclick=async e=>{ const o=e.target.closest("[data-mopen]"), pr=e.target.closest("[data-mprint]");
-  if(o){ try{ const m=await run("getMemo",o.dataset.mopen); openMemo(m); }catch(err){ toast(err.message); } }
-  if(pr){ try{ const m=await run("getMemo",pr.dataset.mprint); printMemo(m); }catch(err){ toast(err.message); } } };
-$("#mNew").onclick=async()=>{ const d=iso(new Date()); let nx=null; try{ nx=await run("nextMemoNo",d); }catch(e){}
-  openMemo({id:"",no:"",status:"Draf",date:d,data:{divisi:INIT.settings.division||"IT",tanggal:d,penyusun:INIT.name||"",tembusan:"-",pengaju:"Divisi "+(INIT.settings.division||"IT"),penutup:"Mohon ditinjau dan disetujui.",lampiran:[]}},nx); };
+  if(o){ const id=o.dataset.mopen, c=memoCached(id); if(c) openMemo(c);
+    try{ const m=await fetchMemo(id); if(!c) openMemo(m); else if(MEMO&&MEMO.id===id&&!MEMO_DIRTY) openMemo(m); }catch(err){ if(!c) toast(err.message); } }
+  if(pr){ const id=pr.dataset.mprint, c=memoCached(id); try{ printMemo(c||await fetchMemo(id)); }catch(err){ toast(err.message); } } };
+/* cache isi memo supaya "Buka" langsung tampil */
+function memoCached(id){ if(!CACHE) CACHE=cacheGet(); return (CACHE.memoFull||{})[id]||null; }
+function memoPut(m){ if(!CACHE) CACHE=cacheGet(); CACHE.memoFull=CACHE.memoFull||{}; CACHE.memoFull[m.id]=m; const ks=Object.keys(CACHE.memoFull); if(ks.length>20) delete CACHE.memoFull[ks[0]]; cacheSave(); }
+const MEMO_INF={};
+function fetchMemo(id){ return MEMO_INF[id]||(MEMO_INF[id]=run("getMemo",id).then(m=>{ memoPut(m); return m; }).finally(()=>delete MEMO_INF[id])); }
+async function prefetchMemos(l){ for(const m of (l||[]).slice(0,6)){ if(memoCached(m.id)&&memoCached(m.id).updated===m.updated) continue; try{ await fetchMemo(m.id); }catch(e){ break; } } }
+const M_REMEMBER=["divisi","penyusun","tembusan","pengaju","pelaksana","pengguna","department","jumlah","penutup"];
+function memoLast(){ try{ return JSON.parse(localStorage.getItem("lhit-memo-last")||"{}"); }catch(e){ return {}; } }
+function memoDraftKey(){ return "lhit-memo-draft"; }
+$("#mNew").onclick=()=>{ const d=iso(new Date()), last=memoLast();
+  let data={divisi:INIT.settings.division||"IT",tanggal:d,penyusun:INIT.name||"",tembusan:"-",pengaju:"Divisi "+(INIT.settings.division||"IT"),penutup:"Mohon ditinjau dan disetujui.",lampiran:[]};
+  M_REMEMBER.forEach(k=>{ if(last[k]) data[k]=last[k]; });                       // isian yang sering sama diambil dari memo terakhir
+  try{ const dr=JSON.parse(localStorage.getItem(memoDraftKey())||"null"); if(dr&&dr.data&&(dr.data.judul||dr.data.subjek)&&confirm("Ada draf memo yang belum disimpan (\""+(dr.data.judul||dr.data.subjek)+"\"). Lanjutkan draf itu?")) data=dr.data; else localStorage.removeItem(memoDraftKey()); }catch(e){}
+  data.tanggal=data.tanggal||d;
+  openMemo({id:"",no:"",status:"Draf",date:data.tanggal,data});                   // langsung tampil, tanpa menunggu server
+  run("nextMemoNo",data.tanggal).then(nx=>{ if(MEMO&&!MEMO.id) $("#meNo").textContent=nx.no+" (perkiraan, dipastikan saat disimpan)"; }).catch(()=>{}); };
 function openMemo(m,nx){ MEMO=JSON.parse(JSON.stringify(m)); MEMO.data=MEMO.data||{}; MEMO.data.lampiran=MEMO.data.lampiran||[]; MEMO_DIRTY=false;
   $("#memoList").hidden=true; $("#memoEdit").hidden=false;
-  $("#meNo").textContent=MEMO.no||(nx?nx.no+" (perkiraan, dipastikan saat disimpan)":"otomatis saat disimpan");
+  $("#meNo").textContent=MEMO.no||(nx?nx.no+" (perkiraan, dipastikan saat disimpan)":"menyiapkan nomor…");
   document.querySelectorAll("[data-m]").forEach(el=>el.value=MEMO.data[el.dataset.m]||"");
   $("#meCancel").hidden=!MEMO.id||MEMO.status==="Batal"; memoStat(); renderMemoAtt(); window.scrollTo(0,0); }
 function memoStat(t){ $("#meStat").textContent=t||(MEMO.id?(MEMO.status==="Batal"?"Memo dibatalkan":"Tersimpan"):"Belum disimpan"); }
-$("#memoEdit").addEventListener("input",e=>{ const k=e.target.dataset.m; if(!k||!MEMO) return; MEMO.data[k]=e.target.value; MEMO_DIRTY=true; memoStat("Ada perubahan belum disimpan"); });
+let MDT=null;
+$("#memoEdit").addEventListener("input",e=>{ const k=e.target.dataset.m; if(!k||!MEMO) return; MEMO.data[k]=e.target.value; MEMO_DIRTY=true; memoStat("Ada perubahan belum disimpan");
+  clearTimeout(MDT); MDT=setTimeout(()=>{ try{ if(!MEMO.id) localStorage.setItem(memoDraftKey(),JSON.stringify({data:MEMO.data,at:Date.now()})); }catch(_){} },600); });
 function renderMemoAtt(){ const L=MEMO.data.lampiran;
   $("#meAtt").innerHTML=L.length?L.map((a,i)=>`<div class="m-att"><button class="chip-open" data-mview="${i}">${/^image\//.test(a.mime||"")?"🖼":"📄"} ${esc(a.name)}</button><input class="in" data-mket="${i}" value="${esc(a.ket||"")}" placeholder="Keterangan, misalnya link https://… atau Prototype HRD"><button class="x" data-mdel="${i}" aria-label="Hapus lampiran">×</button></div>`).join(""):'<p class="hint" style="margin:0">Belum ada lampiran.</p>'; }
 $("#meAtt").addEventListener("input",e=>{ const i=e.target.dataset.mket; if(i==null) return; MEMO.data.lampiran[+i].ket=e.target.value; MEMO_DIRTY=true; memoStat("Ada perubahan belum disimpan"); });
@@ -834,9 +851,13 @@ $("#meFile").onchange=async e=>{ const files=[...e.target.files]; e.target.value
 $("#meSave").onclick=async()=>{ if(!String(MEMO.data.judul||"").trim()){ toast("Isi judul memo"); return; }
   const b=$("#meSave"); b.disabled=true; memoStat("Menyimpan…");
   try{ const r=await run("saveMemo",{id:MEMO.id,updated:MEMO.updated,date:MEMO.data.tanggal,status:MEMO.status==="Batal"?"Batal":MEMO.status,data:MEMO.data});
-    const isNew=!MEMO.id; openMemo(r); toast(isNew?"Memo tersimpan dengan nomor "+r.no:"Memo tersimpan"); if(CACHE){ delete CACHE.memos; } }
+    const isNew=!MEMO.id; memoPut(r);
+    try{ const last={}; M_REMEMBER.forEach(k=>{ if(r.data&&r.data[k]) last[k]=r.data[k]; }); localStorage.setItem("lhit-memo-last",JSON.stringify(last)); if(isNew) localStorage.removeItem(memoDraftKey()); }catch(_){}
+    if(CACHE){ CACHE.memos=(CACHE.memos||[]).filter(x=>x.id!==r.id); CACHE.memos.unshift({id:r.id,no:r.no,seq:r.seq,date:r.date,title:r.title,status:r.status,updated:r.updated,by:r.by}); cacheSave(); }
+    openMemo(r); toast(isNew?"Memo tersimpan dengan nomor "+r.no:"Memo tersimpan"); }
   catch(e){ toast(e.message.replace(/^KONFLIK:\s*/,"")); memoStat(); }
   b.disabled=false; };
+document.addEventListener("keydown",e=>{ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"&&curV==="memo"&&!$("#memoEdit").hidden){ e.preventDefault(); $("#meSave").click(); } });
 $("#meBack").onclick=()=>{ if(MEMO_DIRTY&&!confirm("Ada perubahan yang belum disimpan. Tetap kembali?")) return; loadMemos(); };
 $("#meCancel").onclick=async()=>{ if(!confirm("Batalkan memo "+MEMO.no+"? Nomornya tidak akan dipakai ulang.")) return;
   try{ await run("cancelMemo",MEMO.id); MEMO.status="Batal"; toast("Memo dibatalkan"); loadMemos(); }catch(e){ toast(e.message); } };
