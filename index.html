@@ -203,6 +203,12 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
 @media (prefers-reduced-motion:reduce){.ld-logo,.ld-bar i{animation:none}}
 .evbox{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-top:14px;color:#172033}
 .evbox .ev-title{margin-top:0}
+.memo-form h3{font-size:15px;color:var(--accent);margin:18px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--line)}.memo-form h3:first-of-type{margin-top:6px}
+.mf-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.mf-grid .full{grid-column:1/-1}.mf-grid textarea{resize:vertical}
+.mf-no{display:flex;gap:10px;align-items:center;background:var(--accent-soft);border-radius:10px;padding:10px 12px;margin-bottom:6px}.mf-no span{font-size:12px;color:var(--muted)}.mf-no b{font-size:15px}
+.m-att{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;margin-bottom:8px}
+.mf-foot{margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+@media(max-width:640px){.mf-grid{grid-template-columns:1fr}}
 [hidden]{display:none!important}
 @media(max-width:640px){.in,.task .in{font-size:16px}.tabs{width:100%;margin:0}.tab{flex:1;padding:6px 4px;font-size:13px}.actions .btn{flex:1}}
 </style>
@@ -225,6 +231,7 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
     <button class="tab" data-v="write" aria-selected="true">Tulis</button>
     <button class="tab" data-v="mine" aria-selected="false">Riwayat</button>
     <button class="tab" data-v="dar" aria-selected="false">Data Report</button>
+    <button class="tab" data-v="memo" aria-selected="false">Memo</button>
     <button class="tab" data-v="review" aria-selected="false" hidden>Review atasan</button>
   </nav>
   <button class="gear" id="setBtn" title="Pengaturan" aria-label="Pengaturan"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
@@ -281,6 +288,53 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
   </div>
   <div class="dar" id="darBox"></div>
   <div class="evbox" id="evBox" hidden></div>
+</section>
+
+<section id="v-memo" hidden>
+  <div id="memoList">
+    <div class="tools" style="justify-content:space-between"><div><h2 style="margin:0">Internal Memo</h2><p class="hint" style="margin:2px 0 0">Nomor dokumen dibuat otomatis dan berlanjut terus.</p></div><button class="btn primary" id="mNew">+ Buat memo baru</button></div>
+    <div class="list" id="mmList"><p class="hint">Memuat…</p></div>
+  </div>
+  <div id="memoEdit" hidden>
+    <div class="tools" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <button class="btn" id="meBack">← Daftar memo</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="hint" id="meStat" style="align-self:center"></span><button class="btn" id="mePrint">🖨 Cetak / PDF</button><button class="btn primary" id="meSave">Simpan</button></div>
+    </div>
+    <div class="card memo-form">
+      <div class="mf-no"><span>No. Dokumen</span><b id="meNo">otomatis saat disimpan</b></div>
+      <h3>1. Informasi Penyusun</h3>
+      <div class="mf-grid">
+        <label class="f">Divisi / Jabatan<input class="in" data-m="divisi"></label>
+        <label class="f">Tanggal<input class="in" type="date" data-m="tanggal"></label>
+        <label class="f">Penyusun<input class="in" data-m="penyusun"></label>
+        <label class="f">Tembusan<input class="in" data-m="tembusan" placeholder="-"></label>
+        <label class="f">Divisi Pengaju<input class="in" data-m="pengaju"></label>
+        <label class="f">Divisi Pelaksana<input class="in" data-m="pelaksana" placeholder="Misalnya Finance"></label>
+        <label class="f full">Judul<input class="in" data-m="judul" placeholder="Misalnya Re-Stock Ink Printer Epson 003 dan 664"></label>
+      </div>
+      <h3>2. Isi Pengajuan</h3>
+      <div class="mf-grid">
+        <label class="f">Software / Barang<input class="in" data-m="software" placeholder="-"></label>
+        <label class="f">Pengguna<input class="in" data-m="pengguna"></label>
+        <label class="f">Jumlah User<input class="in" data-m="jumlah"></label>
+        <label class="f">Department<input class="in" data-m="department"></label>
+        <label class="f full">Subjek<input class="in" data-m="subjek"></label>
+        <label class="f full">Alasan <small>(satu poin per baris)</small><textarea class="in" data-m="alasan" rows="3"></textarea></label>
+        <label class="f full">Tujuan <small>(satu poin per baris)</small><textarea class="in" data-m="tujuan" rows="2"></textarea></label>
+        <label class="f full">Manfaat <small>(satu poin per baris)</small><textarea class="in" data-m="manfaat" rows="3"></textarea></label>
+      </div>
+      <h3>3. Rincian dan Pendapat Akhir</h3>
+      <div class="mf-grid">
+        <label class="f full">Rincian Biaya <small>(satu poin per baris; awali dengan “-” untuk sub-poin)</small><textarea class="in" data-m="rincian" rows="5" placeholder="Sebelumnya aktif 3 Users&#10;- Biaya Bulanan: $ 83,25&#10;Setelah perpanjang 2 Users&#10;- Biaya Bulanan: $ 55,50"></textarea></label>
+        <label class="f full">Pendapat Akhir <small>(satu baris per poin)</small><textarea class="in" data-m="pendapat" rows="3"></textarea></label>
+        <label class="f full">Kalimat penutup<input class="in" data-m="penutup"></label>
+      </div>
+      <h3>4. Lampiran</h3>
+      <div id="meAtt"></div>
+      <label class="att-add" style="margin-top:6px">📎 Tambah lampiran (foto/PDF)<input type="file" hidden multiple accept="image/*,application/pdf" id="meFile"></label>
+      <div class="mf-foot"><button class="btn" id="meCancel" style="color:var(--bad)">Batalkan memo</button></div>
+    </div>
+  </div>
 </section>
 
 <section id="v-review" hidden>
@@ -544,11 +598,11 @@ function moveInd(instant){ const sel=document.querySelector('.tab[aria-selected=
   if(instant) ind.classList.add("na"); ind.style.width=sel.offsetWidth+"px"; ind.style.height=sel.offsetHeight+"px"; ind.style.transform=`translate(${sel.offsetLeft}px,${sel.offsetTop}px)`;
   if(instant){ void ind.offsetWidth; requestAnimationFrame(()=>ind.classList.remove("na")); } }
 try{ new ResizeObserver(()=>moveInd(true)).observe(document.querySelector(".tabs")); }catch(e){ addEventListener("resize",()=>moveInd(true)); }
-function show(v){ const order=["write","mine","dar","review"], from=order.indexOf(curV), to=order.indexOf(v);
+function show(v){ const order=["write","mine","dar","memo","review"], from=order.indexOf(curV), to=order.indexOf(v);
   document.querySelectorAll(".tab").forEach(x=>x.setAttribute("aria-selected",x.dataset.v===v)); order.forEach(n=>$("#v-"+n).hidden=n!==v);
   if(v!==curV){ const el=$("#v-"+v); el.classList.remove("vin-r","vin-l"); void el.offsetWidth; el.classList.add(to>from?"vin-r":"vin-l");
     el.addEventListener("animationend",function f(ev){ if(ev.target===el){ el.classList.remove("vin-r","vin-l"); el.removeEventListener("animationend",f); } }); }
-  curV=v; moveInd(); $("#actions").hidden=v!=="write"; if(v==="mine") loadMine(); if(v==="dar") loadDar(); if(v==="review") loadReview(); window.scrollTo(0,0); }
+  curV=v; moveInd(); $("#actions").hidden=v!=="write"; if(v==="mine") loadMine(); if(v==="dar") loadDar(); if(v==="review") loadReview(); if(v==="memo") loadMemos(); window.scrollTo(0,0); }
 $("#date").onchange=async e=>{ if(dirty&&!RO) await save(false,true); loadDate(e.target.value); };
 $("#sys").onclick=e=>{ const b=e.target.closest(".sys"); if(!b) return; const s=b.dataset.sys; R.systems[s]=ST3[(ST3.indexOf(R.systems[s])+1)%3]; renderSys(); changed(); };
 $("#checks").onchange=e=>{ const t=e.target;
@@ -742,6 +796,112 @@ $("#pinSave").onclick=async()=>{ const o=$("#pinOld").value.trim(), n=$("#pinNew
 function setChk(open){ $("#chkCard").classList.toggle("closed",!open); $("#chkTg").setAttribute("aria-expanded",open); try{ localStorage.setItem("lhit-chk",open?"1":"0"); }catch(e){} }
 let chkOpen=false; try{ chkOpen=localStorage.getItem("lhit-chk")==="1"; }catch(e){} setChk(chkOpen);
 $("#chkTg").onclick=()=>setChk($("#chkCard").classList.contains("closed"));
+
+
+/* ================= INTERNAL MEMO ================= */
+let MEMO=null, MEMO_DIRTY=false, MEMOS=[];
+const M_FIELDS=["divisi","tanggal","penyusun","tembusan","pengaju","pelaksana","judul","software","pengguna","jumlah","department","subjek","alasan","tujuan","manfaat","rincian","pendapat","penutup"];
+const dmyLong=iso=>{ try{ return new Date(iso+"T00:00:00").toLocaleDateString("id-ID",{weekday:"long",day:"2-digit",month:"short",year:"numeric"}); }catch(e){ return iso; } };
+async function loadMemos(){ $("#memoEdit").hidden=true; $("#memoList").hidden=false;
+  if(!CACHE) CACHE=cacheGet(); if(CACHE.memos) renderMemos(CACHE.memos);
+  try{ const l=await run("listMemos"); CACHE.memos=l; cacheSave(); renderMemos(l); }catch(e){ if(!CACHE.memos) $("#mmList").innerHTML=`<p class="hint" style="color:var(--bad)">Gagal memuat: ${esc(e.message)}</p>`; } }
+function renderMemos(l){ MEMOS=l;
+  $("#mmList").innerHTML=l.length?l.map(m=>`<div class="item"><div><h3>${esc(m.no)} <span class="pill ${m.status==="Batal"?"bad":m.status==="Final"?"ok":""}">${esc(m.status)}</span></h3><p>${esc(m.title)} · ${esc(fmtLong(m.date))}</p></div><button class="btn sm" data-mprint="${esc(m.id)}">🖨 Cetak</button><button class="btn sm primary" data-mopen="${esc(m.id)}">Buka</button></div>`).join(""):'<p class="hint">Belum ada memo. Klik <b>+ Buat memo baru</b>.</p>'; }
+$("#mmList").onclick=async e=>{ const o=e.target.closest("[data-mopen]"), pr=e.target.closest("[data-mprint]");
+  if(o){ try{ const m=await run("getMemo",o.dataset.mopen); openMemo(m); }catch(err){ toast(err.message); } }
+  if(pr){ try{ const m=await run("getMemo",pr.dataset.mprint); printMemo(m); }catch(err){ toast(err.message); } } };
+$("#mNew").onclick=async()=>{ const d=iso(new Date()); let nx=null; try{ nx=await run("nextMemoNo",d); }catch(e){}
+  openMemo({id:"",no:"",status:"Draf",date:d,data:{divisi:INIT.settings.division||"IT",tanggal:d,penyusun:INIT.name||"",tembusan:"-",pengaju:"Divisi "+(INIT.settings.division||"IT"),penutup:"Mohon ditinjau dan disetujui.",lampiran:[]}},nx); };
+function openMemo(m,nx){ MEMO=JSON.parse(JSON.stringify(m)); MEMO.data=MEMO.data||{}; MEMO.data.lampiran=MEMO.data.lampiran||[]; MEMO_DIRTY=false;
+  $("#memoList").hidden=true; $("#memoEdit").hidden=false;
+  $("#meNo").textContent=MEMO.no||(nx?nx.no+" (perkiraan, dipastikan saat disimpan)":"otomatis saat disimpan");
+  document.querySelectorAll("[data-m]").forEach(el=>el.value=MEMO.data[el.dataset.m]||"");
+  $("#meCancel").hidden=!MEMO.id||MEMO.status==="Batal"; memoStat(); renderMemoAtt(); window.scrollTo(0,0); }
+function memoStat(t){ $("#meStat").textContent=t||(MEMO.id?(MEMO.status==="Batal"?"Memo dibatalkan":"Tersimpan"):"Belum disimpan"); }
+$("#memoEdit").addEventListener("input",e=>{ const k=e.target.dataset.m; if(!k||!MEMO) return; MEMO.data[k]=e.target.value; MEMO_DIRTY=true; memoStat("Ada perubahan belum disimpan"); });
+function renderMemoAtt(){ const L=MEMO.data.lampiran;
+  $("#meAtt").innerHTML=L.length?L.map((a,i)=>`<div class="m-att"><button class="chip-open" data-mview="${i}">${/^image\//.test(a.mime||"")?"🖼":"📄"} ${esc(a.name)}</button><input class="in" data-mket="${i}" value="${esc(a.ket||"")}" placeholder="Keterangan, misalnya link https://… atau Prototype HRD"><button class="x" data-mdel="${i}" aria-label="Hapus lampiran">×</button></div>`).join(""):'<p class="hint" style="margin:0">Belum ada lampiran.</p>'; }
+$("#meAtt").addEventListener("input",e=>{ const i=e.target.dataset.mket; if(i==null) return; MEMO.data.lampiran[+i].ket=e.target.value; MEMO_DIRTY=true; memoStat("Ada perubahan belum disimpan"); });
+$("#meAtt").addEventListener("click",e=>{ const v=e.target.closest("[data-mview]"), d=e.target.closest("[data-mdel]");
+  if(v) openAttachment(MEMO.data.lampiran[+v.dataset.mview]);
+  if(d){ MEMO.data.lampiran.splice(+d.dataset.mdel,1); MEMO_DIRTY=true; renderMemoAtt(); memoStat("Ada perubahan belum disimpan"); } });
+$("#meFile").onchange=async e=>{ const files=[...e.target.files]; e.target.value="";
+  for(const f of files){ const isImg=/^image\//.test(f.type)&&!/svg/.test(f.type); if(!isImg&&f.size>10*1024*1024){ toast(f.name+" terlalu besar (maks 10 MB)"); continue; }
+    memoStat("Mengunggah "+f.name+"…");
+    try{ const d=isImg?await shrinkImage(f):await readFile(f); const r=await run("uploadAttachment",MEMO.data.tanggal||iso(new Date()),d.name,d.mime,d.data);
+      MEMO.data.lampiran.push({id:r.id,name:r.name,mime:r.mime,ket:""}); MEMO_DIRTY=true; renderMemoAtt(); memoStat("Lampiran ditambahkan, jangan lupa Simpan"); }
+    catch(err){ toast("Gagal unggah: "+err.message); memoStat(); } } };
+$("#meSave").onclick=async()=>{ if(!String(MEMO.data.judul||"").trim()){ toast("Isi judul memo"); return; }
+  const b=$("#meSave"); b.disabled=true; memoStat("Menyimpan…");
+  try{ const r=await run("saveMemo",{id:MEMO.id,updated:MEMO.updated,date:MEMO.data.tanggal,status:MEMO.status==="Batal"?"Batal":MEMO.status,data:MEMO.data});
+    const isNew=!MEMO.id; openMemo(r); toast(isNew?"Memo tersimpan dengan nomor "+r.no:"Memo tersimpan"); if(CACHE){ delete CACHE.memos; } }
+  catch(e){ toast(e.message.replace(/^KONFLIK:\s*/,"")); memoStat(); }
+  b.disabled=false; };
+$("#meBack").onclick=()=>{ if(MEMO_DIRTY&&!confirm("Ada perubahan yang belum disimpan. Tetap kembali?")) return; loadMemos(); };
+$("#meCancel").onclick=async()=>{ if(!confirm("Batalkan memo "+MEMO.no+"? Nomornya tidak akan dipakai ulang.")) return;
+  try{ await run("cancelMemo",MEMO.id); MEMO.status="Batal"; toast("Memo dibatalkan"); loadMemos(); }catch(e){ toast(e.message); } };
+$("#mePrint").onclick=()=>{ if(!MEMO.id&&!confirm("Memo belum disimpan, nomor dokumen belum resmi. Tetap cetak pratinjau?")) return; printMemo(MEMO); };
+/* ---------- format cetak (mengikuti format Internal Memo kantor) ---------- */
+function memoHtml(m,imgs){ const D=m.data||{}, logo=(document.querySelector(".ld-logo")||{}).src||"";
+  const lines=t=>String(t||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  const bul=t=>{ const L=lines(t); if(!L.length) return "-"; return "<ul>"+L.map(x=>/^[-–]\s*/.test(x)?`<li class="sub">${esc(x.replace(/^[-–]\s*/,""))}</li>`:`<li>${esc(x)}</li>`).join("")+"</ul>"; };
+  const plain=t=>lines(t).map(esc).join("<br>")||"-";
+  const link=t=>esc(t||"").replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1">$1</a>');
+  const dd=D.tanggal?D.tanggal.slice(8,10)+"/"+D.tanggal.slice(5,7):"";
+  const head=`<div class="mh"><img src="${logo}" alt="Woori Consulting"></div>`;
+  const lamp=(D.lampiran||[]).map((a,i)=>`<table class="mt att"><tr><th colspan="2">LAMPIRAN ${i+1} – FOTO / DOKUMEN PENDUKUNG</th></tr>
+    <tr><td colspan="2" class="ph">${/^image\//.test(a.mime||"")&&imgs&&imgs[a.id]?`<img src="${imgs[a.id]}">`:`<i>${esc(a.name)}</i>`}</td></tr>
+    <tr><th class="k">KETERANGAN</th><td>${link(a.ket||"")}</td></tr></table>`).join("");
+  return `<div class="memo">
+  <section class="pg">${head}
+    <h1>INTERNAL MEMO</h1>
+    <table class="ap"><tr><td rowspan="3" class="v">PERSETUJUAN</td><th>PIC IT</th><th>DIREKTUR</th><th>DIREKTUR UTAMA</th></tr><tr class="sg"><td></td><td></td><td></td></tr><tr><td>${dd}</td><td>/</td><td>/</td></tr></table>
+    <h2>1. INFORMASI PENYUSUN</h2>
+    <table class="mt"><tr><th>DIVISI / JABATAN</th><td>${esc(D.divisi||"-")}</td><th>TANGGAL</th><td>${esc(D.tanggal?dmyLong(D.tanggal):"-")}</td></tr>
+      <tr><th>PENYUSUN</th><td>${esc(D.penyusun||"-")}</td><th>TEMBUSAN</th><td>${esc(D.tembusan||"-")}</td></tr>
+      <tr><th>DIVISI PENGAJU</th><td>${esc(D.pengaju||"-")}</td><th>DIVISI PELAKSANA</th><td>${esc(D.pelaksana||"-")}</td></tr>
+      <tr><th>NO. DOKUMEN</th><td colspan="3" class="c">${esc(m.no||"(belum bernomor)")}</td></tr>
+      <tr><th>JUDUL</th><td colspan="3" class="c">${esc(D.judul||"-")}</td></tr></table>
+    <h2>2. ISI PENGAJUAN</h2>
+    <table class="mt"><tr><th>SOFTWARE</th><td class="c">${esc(D.software||"-")}</td><th>PENGGUNA</th><td class="c">${esc(D.pengguna||"-")}</td></tr>
+      <tr><th>JUMLAH USER</th><td class="c">${esc(D.jumlah||"-")}</td><th>DEPARTMENT</th><td class="c">${esc(D.department||"-")}</td></tr>
+      <tr><th>SUBJEK</th><td colspan="3">${esc(D.subjek||"-")}</td></tr>
+      <tr><th>ALASAN</th><td colspan="3">${bul(D.alasan)}</td></tr>
+      <tr><th>TUJUAN</th><td colspan="3">${bul(D.tujuan)}</td></tr>
+      <tr><th>MANFAAT</th><td colspan="3">${bul(D.manfaat)}</td></tr></table>
+  </section>
+  <section class="pg">${head}
+    <h2>3. RINCIAN DAN PENDAPAT AKHIR</h2>
+    <table class="mt"><tr><th class="hd">ITEM</th><th class="hd">RINCIAN</th></tr>
+      <tr><th>RINCIAN BIAYA</th><td>${bul(D.rincian)}</td></tr>
+      <tr><th>PENDAPAT AKHIR</th><td>${plain(D.pendapat)}</td></tr></table>
+    <p class="close">${esc(D.penutup||"Mohon ditinjau dan disetujui.")}</p>
+  </section>
+  ${lamp?`<section class="pg">${head}<h2>4. LAMPIRAN</h2>${lamp}</section>`:""}
+  </div>`;
+}
+const MEMO_CSS=`@page{size:A4;margin:14mm 16mm}body{margin:0;font:12px Arial,Helvetica,sans-serif;color:#000}
+.memo .pg{page-break-after:always}.memo .pg:last-child{page-break-after:auto}
+.mh{display:flex;justify-content:flex-end;border-bottom:1.5px solid #1F3864;padding-bottom:4px;margin-bottom:14px}.mh img{height:34px}
+h1{text-align:center;color:#1F3864;font-size:22px;letter-spacing:.5px;margin:6px 0 10px}
+h2{color:#1F3864;font-size:14px;margin:16px 0 6px;padding-bottom:4px;border-bottom:1.5px solid #1F3864}
+table{border-collapse:collapse;width:100%}td,th{border:1px solid #000;padding:5px 6px;vertical-align:middle;font-size:11px}
+.mt th{background:#F2F2F2;font-weight:700;width:18%;font-size:10px;text-align:center}.mt th.hd{width:auto}.mt td.c{text-align:center}
+.mt ul{margin:0;padding-left:16px}.mt li{margin:2px 0}.mt li.sub{list-style:none;margin-left:-4px}
+.ap{width:46%;margin-left:auto;margin-bottom:4px}.ap th{background:#fff;font-size:9px;font-weight:600;width:auto}.ap td{text-align:center;font-size:10px}
+.ap td.v{writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;font-weight:700;width:14px;padding:4px 2px}.ap .sg td{height:44px}
+.close{text-align:center;margin-top:12px}
+.att{margin-bottom:14px}.att th{text-align:center}.att th.k{width:22%}.att .ph{text-align:center;padding:10px}.att .ph img{max-width:100%;max-height:340px}
+a{color:#000}`;
+async function printMemo(m){
+  const w=window.open("","_blank"); if(!w){ toast("Izinkan pop-up untuk mencetak"); return; }
+  w.document.write("<p style='font:14px Arial;padding:20px'>Menyiapkan memo…</p>");
+  const imgs={}; for(const a of ((m.data||{}).lampiran||[])){ if(!/^image\//.test(a.mime||"")) continue;
+    const c=typeof imgCacheGet==="function"?imgCacheGet(a.id):null; if(c){ imgs[a.id]=c; continue; }
+    try{ const r=await run("viewAttachment",a.id); imgs[a.id]=`data:${r.mime};base64,${r.data}`; }catch(e){} }
+  w.document.open(); w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(m.no||"Internal Memo")}</title><style>${MEMO_CSS}</style></head><body>${memoHtml(m,imgs)}</body></html>`); w.document.close();
+  setTimeout(()=>{ w.focus(); w.print(); },500);
+}
 
 /* ---------- jam ---------- */
 const CK=["h1","h2",":","m1","m2",":s","s1","s2"], prevD={}, cells={};
