@@ -201,6 +201,8 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
 @keyframes ldIn{from{opacity:0}to{opacity:1}}
 @media (prefers-color-scheme:dark){.ld-logo{background:#fff;border-radius:12px;padding:10px 14px}}
 @media (prefers-reduced-motion:reduce){.ld-logo,.ld-bar i{animation:none}}
+.evbox{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-top:14px;color:#172033}
+.evbox .ev-title{margin-top:0}
 [hidden]{display:none!important}
 @media(max-width:640px){.in,.task .in{font-size:16px}.tabs{width:100%;margin:0}.tab{flex:1;padding:6px 4px;font-size:13px}.actions .btn{flex:1}}
 </style>
@@ -222,7 +224,7 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
     <span class="tab-ind" id="tabInd" aria-hidden="true"></span>
     <button class="tab" data-v="write" aria-selected="true">Tulis</button>
     <button class="tab" data-v="mine" aria-selected="false">Riwayat</button>
-    <button class="tab" data-v="dar" aria-selected="false">Rekap</button>
+    <button class="tab" data-v="dar" aria-selected="false">Data Report</button>
     <button class="tab" data-v="review" aria-selected="false" hidden>Review atasan</button>
   </nav>
   <button class="gear" id="setBtn" title="Pengaturan" aria-label="Pengaturan"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
@@ -235,7 +237,7 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
   <div class="head">
     <div>
       <label class="hint" style="display:flex;gap:8px;align-items:center">Laporan untuk tanggal <input type="date" id="date" class="in" style="width:auto;padding:4px 8px"></label>
-      <div class="card clock"><div><span class="hint" id="greet"></span><br><b id="cDay"></b><div class="full" id="cDate"></div></div><div class="ct" id="cTime" role="timer"></div><div class="cfoot"><span class="cst" id="cSt"></span><span class="cbar" aria-hidden="true"><span id="cBar"></span></span></div></div>
+      <div class="card clock"><div><span class="hint" id="greet"></span><br><b id="cDay"></b><div class="full" id="cDate"></div></div><div class="ct" id="cTime" role="timer"></div></div>
     </div>
     <div class="card"><h2 style="font-size:15px">Status sistem <span class="hint">ketuk untuk ubah</span></h2><div class="sys-grid" id="sys"></div></div>
   </div>
@@ -278,6 +280,7 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
     <button class="btn primary" id="dMail">Kirim email</button>
   </div>
   <div class="dar" id="darBox"></div>
+  <div class="evbox" id="evBox" hidden></div>
 </section>
 
 <section id="v-review" hidden>
@@ -398,7 +401,7 @@ async function boot(){
   syncing(false);
   CACHE.init=B.init; CACHE.rep[today]=B.report; if(B.list) CACHE.list[mo]=B.list; if(B.dar) CACHE.dar[today]=B.dar; cacheSave();
   applyInit(B.init); if(!fromCache) setupDates();
-  if(INIT.pinDefault) setTimeout(()=>toast("PIN masih 1234. Segera ganti di tab Rekap > Ganti PIN"),1200);
+  if(INIT.pinDefault) setTimeout(()=>toast("PIN masih 1234. Segera ganti di Pengaturan (ikon ⚙) > Ganti PIN"),1200);
   if(B.lock&&B.lock.ok===false) setReadOnly(true,`<b>Hanya baca.</b> Laporan ini sedang diedit di <b>${esc(B.lock.dev)}</b> sejak ${esc(B.lock.since)}. Supaya data tidak tertimpa, perubahan di jendela ini dikunci.`);
   else { LOCKED_DATE=today; setReadOnly(false); }
   freshReport(today,B.report);
@@ -472,7 +475,7 @@ function renderBanner(){
   const s=R.status, b=$("#banner"); if(!s){ b.innerHTML=""; return; }
   const cls=s==="Terkirim"||s==="Disetujui"?"ok":s==="Perlu revisi"?"bad":s==="Draf"?"draft":"warn";
   let txt=s==="Disetujui"?`Disetujui oleh ${esc(R.approvedBy)} pada ${esc(R.approvedAt)}${R.bossNote?`. Catatan: “${esc(R.bossNote)}”`:""}`:s==="Perlu revisi"?`Catatan atasan: “${esc(R.bossNote)}”`:s==="Draf"?"Belum dikirim ke atasan.":`Dikirim ${esc(R.sent)}`;
-  b.innerHTML=`<div class="banner ${cls}"><div><b>${esc(s)}</b>${txt}${LOGS.length?`<ol class="trail">${LOGS.map(l=>`<li>${esc(l.at)}: ${esc(l.act)} oleh ${esc(l.by)}${l.detail?` (${esc(l.detail)})`:""}</li>`).join("")}</ol>`:""}</div></div>`;
+  b.innerHTML=`<div class="banner ${cls}"><div><b>${esc(s)}</b>${txt}</div></div>`;
   const u=$("#unsend"); if(u) u.onclick=async()=>{ if(u.dataset.a!=="1"){ u.dataset.a="1"; u.textContent="Yakin batalkan?"; return; } const g=await run("cancelSubmit",R.date).catch(e=>toast(e.message)); if(g){ R.status="Draf"; LOGS=g.logs; renderBanner(); toast("Pengiriman dibatalkan"); } };
 }
 function renderSys(){ $("#sys").innerHTML=SYSTEMS.map(s=>`<button class="sys" data-sys="${s}" data-s="${R.systems[s]}"><span class="dot"></span><span>${s}<i>${R.systems[s]}</i></span></button>`).join(""); }
@@ -576,7 +579,7 @@ $("#saveBtn").onclick=()=>save(false);
 $("#sendBtn").onclick=()=>{
   const d=R.tasks.filter(t=>t.status==="Selesai").length, n=R.checks.filter(c=>c.done).length;
   $("#cfBody").innerHTML=`<li><span>Tanggal</span><b>${esc(fmtLong(R.date))}</b></li><li><span>Aktivitas</span><b>${R.tasks.length} (${d} selesai)</b></li><li><span>Checklist</span><b>${n}/${R.checks.length}</b></li>`;
-  const to=($("#pTo").value||INIT.settings.to||"").trim(); if(!to){ toast("Isi Email kepada di tab Rekap dulu"); return; }
+  const to=($("#pTo").value||INIT.settings.to||"").trim(); if(!to){ toast("Isi Email kepada di Pengaturan (ikon ⚙) dulu"); return; }
   $("#cfMailWrap").hidden=true; $("#cfBody").insertAdjacentHTML("beforeend",`<li><span>Kepada</span><b>${esc(to)}</b></li>${INIT.settings.cc?`<li><span>CC</span><b>${esc(INIT.settings.cc)}</b></li>`:""}`);
   $("#cfDlg").showModal(); };
 $("#cfNo").onclick=()=>$("#cfDlg").close();
@@ -588,6 +591,7 @@ async function loadMine(){ const mo=$("#mMonth").value; if(!CACHE) CACHE=cacheGe
   if(CACHE.list[mo]) renderMine(CACHE.list[mo]); else $("#mList").innerHTML='<p class="hint">Memuat…</p>';
   syncing(true); try{ const l=await run("listReports",mo,"mine"); CACHE.list[mo]=l; cacheSave(); if($("#mMonth").value===mo) renderMine(l); }catch(e){ toast("Gagal memuat riwayat: "+e.message); } finally{ syncing(false); } }
 function renderMine(l){
+  setTimeout(()=>prefetchRiwayat(l),300);
   $("#mList").innerHTML=l.length?l.map(r=>`<div class="item"><div><h3>${esc(fmtLong(r.date))} ${pill(r.status)}${r.lembur?`<span class="pill ot">Lembur ${esc(r.lembur)} jam</span>`:""}</h3><p>${r.tasks} aktivitas, ${r.done} selesai${r.approvedBy?`. Disetujui ${esc(r.approvedBy)}`:""}</p></div><button class="btn sm" data-view="${r.date}">Lihat</button><button class="btn sm primary" data-open="${r.date}">Ubah</button><div class="det" data-det="${r.date}" hidden></div></div>`).join(""):'<p class="hint">Belum ada laporan.</p>'; }
 $("#mMonth").onchange=loadMine;
 $("#mList").onclick=async e=>{
@@ -598,10 +602,19 @@ $("#mList").onclick=async e=>{
   if(!d.hidden){ d.hidden=true; v.textContent="Lihat"; return; }
   d.hidden=false; v.textContent="Tutup";
   if(d.dataset.ok) return;
-  d.innerHTML='<p class="hint">Memuat…</p>';
-  try{ const g=await run("getReport",v.dataset.view); d.innerHTML=detailHtml(g.report); d.dataset.ok="1"; }
-  catch(err){ d.innerHTML=`<p class="hint" style="color:var(--bad)">Gagal memuat: ${esc(err.message||err)}</p>`; }
+  const date=v.dataset.view; if(!CACHE) CACHE=cacheGet();
+  if(CACHE.rep[date]){ d.innerHTML=detailHtml(CACHE.rep[date].report); d.dataset.ok="1"; }   // tampil seketika dari cache
+  else d.innerHTML='<p class="hint">Memuat…</p>';
+  try{ const g=await getRep(date); if(!d.hidden) d.innerHTML=detailHtml(g.report); d.dataset.ok="1"; }
+  catch(err){ if(!d.dataset.ok) d.innerHTML=`<p class="hint" style="color:var(--bad)">Gagal memuat: ${esc(err.message||err)}</p>`; }
 };
+/* ambil laporan (satu permintaan per tanggal, hasil disimpan di cache) */
+const REP_INFLIGHT={};
+function getRep(date){ if(REP_INFLIGHT[date]) return REP_INFLIGHT[date];
+  return REP_INFLIGHT[date]=run("getReport",date).then(g=>{ if(!CACHE) CACHE=cacheGet(); if(!(R&&R.date===date&&dirty)){ CACHE.rep[date]=g; cacheSave(); } return g; }).finally(()=>{ delete REP_INFLIGHT[date]; }); }
+/* siapkan detail riwayat di latar belakang supaya saat "Lihat" ditekan langsung tampil */
+async function prefetchRiwayat(list){ if(!CACHE) CACHE=cacheGet();
+  for(const r of (list||[]).slice(0,8)){ if(CACHE.rep[r.date]) continue; try{ await getRep(r.date); }catch(e){ break; } } }
 function detailHtml(r){
   if(!r) return '<p class="hint">Data tidak ditemukan.</p>';
   const st=s=>`<span class="pill ${s==="Selesai"?"ok":s==="Tertunda"?"bad":"warn"}">${esc(s)}</span>`;
@@ -616,7 +629,8 @@ function detailHtml(r){
 }
 
 /* ---------- rekap / DAR ---------- */
-function renderDar(D){ $("#darBox").innerHTML=darHtml(D)+(D.exists?"":'<p style="color:#B23A26;font-size:13px">Belum ada laporan tersimpan untuk tanggal ini.</p>')+evidenceHtml(D); loadEvidence(); }
+function renderDar(D){ $("#darBox").innerHTML=darHtml(D)+(D.exists?"":'<p style="color:#B23A26;font-size:13px">Belum ada laporan tersimpan untuk tanggal ini.</p>');
+  const ev=evidenceHtml(D), box=$("#evBox"); box.hidden=!ev; box.innerHTML=ev; if(ev) loadEvidence(); }
 async function loadDar(){ const d=$("#dDate").value; if(!CACHE) CACHE=cacheGet();
   if(CACHE.dar[d]) renderDar(CACHE.dar[d]); else $("#darBox").innerHTML='<p style="color:#666">Memuat…</p>';
   syncing(true); try{ const D=await run("getDar",d,""); CACHE.dar[d]=D; cacheSave(); if($("#dDate").value===d) renderDar(D); }catch(e){ toast("Gagal memuat rekap: "+e.message); } finally{ syncing(false); } }
@@ -624,14 +638,21 @@ function evidenceHtml(D){
   const ev=D.evidence||[]; if(!ev.length) return "";
   return `<h3 class="ev-title">LAMPIRAN BUKTI PEKERJAAN</h3>`+ev.map(e=>`<div class="ev-item"><div class="ev-cap">${e.no}. ${esc(String(e.desc||"").toUpperCase())}</div>${(e.user||e.div)?`<div class="ev-sub">User: ${esc([e.user,e.div].filter(Boolean).join(" - "))}</div>`:""}
     <div class="ev-grid">${e.att.map(a=>/^image\//.test(a.mime||"")?`<button class="ev-img" data-evid="${esc(a.id)}" data-evname="${esc(a.name)}" title="${esc(a.name)}"><span class="ev-ph">Memuat foto…</span></button>`:`<button class="ev-doc" data-evid="${esc(a.id)}" data-evname="${esc(a.name)}">📄 ${esc(a.name)}</button>`).join("")}</div></div>`).join("")
-    +`<p class="ev-note">Foto bukti ini juga tampil di isi email dan PDF yang dikirim ke atasan.</p>`;
+    +`<p class="ev-note">Nomor sesuai daftar TODAY di atas. Klik foto untuk memperbesar. Foto bukti juga ikut di email dan PDF ke atasan.</p>`;
 }
+const IMG_MEM={};
+function imgCacheGet(id){ if(IMG_MEM[id]) return IMG_MEM[id]; try{ const v=sessionStorage.getItem("lhit-img-"+id); if(v) return IMG_MEM[id]=v; }catch(e){} return null; }
+function imgCachePut(id,url){ IMG_MEM[id]=url; try{ if(url.length<400000) sessionStorage.setItem("lhit-img-"+id,url); }catch(e){} }
 async function loadEvidence(){
-  for(const b of document.querySelectorAll(".ev-img[data-evid]")){
-    try{ const r=await run("viewAttachment",b.dataset.evid); b.innerHTML=`<img src="data:${r.mime};base64,${r.data}" alt="${esc(r.name)}">`; }
-    catch(e){ b.innerHTML='<span class="ev-ph">Gagal memuat</span>'; }
-  }
+  const btns=[...document.querySelectorAll("#evBox .ev-img[data-evid]")];
+  const show=(b,url,name)=>{ b.innerHTML=`<img src="${url}" alt="${esc(name||"")}" loading="lazy">`; };
+  const todo=[]; btns.forEach(b=>{ const c=imgCacheGet(b.dataset.evid); if(c) show(b,c,b.dataset.evname); else todo.push(b); });
+  let k=0; const worker=async()=>{ while(k<todo.length){ const b=todo[k++];
+      try{ const r=await run("viewAttachment",b.dataset.evid), url=`data:${r.mime};base64,${r.data}`; imgCachePut(b.dataset.evid,url); show(b,url,r.name); }
+      catch(e){ b.innerHTML='<span class="ev-ph">Gagal memuat</span>'; } } };
+  await Promise.all([worker(),worker(),worker()]);   // 3 foto dimuat bersamaan
 }
+$("#evBox").addEventListener("click",e=>{ const b=e.target.closest("[data-evid]"); if(b) openAttachment({id:b.dataset.evid,name:b.dataset.evname}); });
 $("#darBox").addEventListener("click",e=>{ const b=e.target.closest("[data-evid]"); if(b) openAttachment({id:b.dataset.evid,name:b.dataset.evname}); });
 function darHtml(D){ const cell="border:1px solid #222;padding:6px 8px;";
   return `<h2 style="text-align:center;font-family:Arial;margin-bottom:10px">DAILY ACTIVITY REPORT</h2><table style="font:bold 13px Arial;margin-bottom:10px"><tr><td style="padding-right:14px">NAME</td><td>: ${esc(D.name)}</td></tr><tr><td>DIVISION</td><td>: ${esc(D.division)}</td></tr><tr><td>DATE</td><td>: ${esc(D.dateLabel)}</td></tr></table>
@@ -660,9 +681,9 @@ $("#rList").onclick=async e=>{ const b=e.target.closest("[data-rv]"); if(!b) ret
 
 /* ---------- lampiran ---------- */
 function shrinkImage(file){ return new Promise((res,rej)=>{ const img=new Image(), url=URL.createObjectURL(file);
-  img.onload=()=>{ const max=1280, sc=Math.min(1,max/Math.max(img.width,img.height)), c=document.createElement("canvas");
+  img.onload=()=>{ const max=800, sc=Math.min(1,max/Math.max(img.width,img.height)), c=document.createElement("canvas");
     c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc); c.getContext("2d").drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url);
-    res({data:c.toDataURL("image/jpeg",0.7).split(",")[1], mime:"image/jpeg", name:file.name.replace(/\.[^.]+$/,"")+".jpg"}); };
+    res({data:c.toDataURL("image/jpeg",0.6).split(",")[1], mime:"image/jpeg", name:file.name.replace(/\.[^.]+$/,"")+".jpg"}); };
   img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("Gambar tidak bisa dibaca")); }; img.src=url; }); }
 function readFile(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res({data:String(r.result).split(",")[1], mime:file.type||"application/octet-stream", name:file.name}); r.onerror=()=>rej(new Error("File tidak bisa dibaca")); r.readAsDataURL(file); }); }
 async function addAttachments(i,files){
@@ -733,12 +754,6 @@ function tick(){
   setD("h1",hh[0]); setD("h2",hh[1]); setD("m1",mm[0]); setD("m2",mm[1]); setD("s1",ss[0]); setD("s2",ss[1]);
   $("#greet").textContent=h<11?"Selamat pagi":h<15?"Selamat siang":h<18?"Selamat sore":"Selamat malam";
   $("#cDay").textContent=n.toLocaleDateString("id-ID",{weekday:"long"}); $("#cDate").textContent=n.toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"});
-  const st=$("#cSt"), bar=$("#cBar"), wd=n.getDay(), S=INIT?INIT.settings:{jamMasuk:"08:00",jamPulang:"17:00"};
-  const a=toMin(S.jamMasuk||"08:00"), b=toMin(S.jamPulang||"17:00"), now=h*60+n.getMinutes()+n.getSeconds()/60;
-  if(wd===0||wd===6){ st.className="cst ot"; st.textContent="Hari libur. Pekerjaan hari ini dicatat sebagai lembur"; bar.style.width="0"; }
-  else if(now<a){ st.className="cst off"; st.textContent="Belum jam kerja, mulai pukul "+(S.jamMasuk||"08:00").replace(":","."); bar.style.width="0"; }
-  else if(now<b){ const left=Math.ceil(b-now); st.className="cst"; st.textContent=`Jam kerja berjalan, sisa ${left>=60?Math.floor(left/60)+" jam ":""}${left%60} menit`; bar.style.width=((now-a)/(b-a)*100).toFixed(2)+"%"; }
-  else { st.className="cst off"; st.textContent="Jam kerja hari ini sudah selesai"; bar.style.width="100%"; }
   if(INIT && R && !dirty && iso(n)!==INIT.today && R.date===INIT.today){ INIT.today=iso(n); loadDate(INIT.today); toast("Hari sudah berganti, laporan baru siap"); }
   setTimeout(tick,1000-n.getMilliseconds()+10);
 }
