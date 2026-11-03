@@ -101,7 +101,7 @@ textarea.in{min-height:76px;resize:vertical}
 .actions-in{max-width:1000px;margin:0 auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .st{margin-right:auto;font-size:13px;color:var(--muted)}.st.dirty{color:var(--warn)}
 .list{display:grid;gap:8px}.item{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.item div{flex:1;min-width:200px}.item h3{font-size:16px}.item p{margin:0;font-size:13px;color:var(--muted)}
+.item>div{flex:1;min-width:200px}.item h3{font-size:16px}.item p{margin:0;font-size:13px;color:var(--muted)}
 .pill{display:inline-block;font-size:12px;font-weight:500;padding:1px 9px;border-radius:99px;background:var(--soft);color:var(--muted);margin-left:6px;font-family:"IBM Plex Sans",sans-serif;vertical-align:2px}
 .pill.ok{background:var(--ok-soft);color:var(--ok)}.pill.warn{background:var(--warn-soft);color:var(--warn)}.pill.bad{background:var(--bad-soft);color:var(--bad)}.pill.ot{background:var(--ot-soft);color:var(--ot)}
 .tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:end}.tools .grow{flex:1;min-width:200px}
@@ -209,6 +209,24 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
 .m-att{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;margin-bottom:8px}
 .mf-foot{margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
 @media(max-width:640px){.mf-grid{grid-template-columns:1fr}}
+.item{min-width:0;max-width:100%}.item .det,.item .det div{min-width:0}
+.dt td{overflow-wrap:anywhere}.dt .chip-open{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:640px){
+  .item .dwrap{overflow:visible}
+  .dt,.dt tbody{display:block;width:100%;min-width:0}
+  .dt td.nouser{display:none}
+  .dt tr:first-child{display:none}
+  .dt tr{display:grid;grid-template-columns:auto auto 1fr;grid-template-areas:"no jam st" "akt akt akt" "usr usr usr";gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .dt td{display:block;padding:0;border:0;min-width:0}
+  .dt td:nth-child(1){grid-area:no;font-weight:700;color:var(--muted)}
+  .dt td:nth-child(2){grid-area:jam;color:var(--muted)}
+  .dt td:nth-child(3){grid-area:akt}
+  .dt td:nth-child(4){grid-area:usr;font-size:12px;color:var(--muted)}
+  .dt td:nth-child(4):empty{display:none}
+  .dt td:nth-child(5){grid-area:st;justify-self:end}
+  .dt .atts{display:flex;flex-wrap:wrap;gap:6px}
+  .dt .chip{max-width:100%}
+}
 [hidden]{display:none!important}
 @media(max-width:640px){.in,.task .in{font-size:16px}.tabs{width:100%;margin:0}.tab{flex:1;padding:6px 4px;font-size:13px}.actions .btn{flex:1}}
 </style>
@@ -672,7 +690,7 @@ async function prefetchRiwayat(list){ if(!CACHE) CACHE=cacheGet();
 function detailHtml(r){
   if(!r) return '<p class="hint">Data tidak ditemukan.</p>';
   const st=s=>`<span class="pill ${s==="Selesai"?"ok":s==="Tertunda"?"bad":"warn"}">${esc(s)}</span>`;
-  const rows=(r.tasks||[]).map((t,i)=>`<tr><td>${i+1}</td><td>${esc(t.time||"–")}</td><td>${t.utama?"★ ":""}${esc(t.desc)}${t.ket?`<small>${esc(t.ket)}</small>`:""}${(t.att||[]).length?`<div class="atts" style="margin-top:4px">${t.att.map(a=>`<span class="chip"><button class="chip-open" data-hatt="${esc(a.id)}" data-hname="${esc(a.name)}">${a.mime&&a.mime.indexOf("image/")===0?"🖼":"📄"} ${esc(a.name)}</button></span>`).join("")}</div>`:""}</td><td>${esc(t.user||"–")}${t.div?`<small>${esc(t.div)}</small>`:""}</td><td>${st(t.status||"Selesai")}</td></tr>`).join("");
+  const rows=(r.tasks||[]).map((t,i)=>`<tr><td>${i+1}</td><td>${esc(t.time||"–")}</td><td>${t.utama?"★ ":""}${esc(t.desc)}${t.ket?`<small>${esc(t.ket)}</small>`:""}${(t.att||[]).length?`<div class="atts" style="margin-top:4px">${t.att.map(a=>`<span class="chip"><button class="chip-open" data-hatt="${esc(a.id)}" data-hname="${esc(a.name)}">${a.mime&&a.mime.indexOf("image/")===0?"🖼":"📄"} ${esc(a.name)}</button></span>`).join("")}</div>`:""}</td><td class="${t.user||t.div?"":"nouser"}">${esc(t.user||"–")}${t.div?`<small>${esc(t.div)}</small>`:""}</td><td>${st(t.status||"Selesai")}</td></tr>`).join("");
   const ch=r.checks||[], cd=ch.filter(c=>c.done).length, ci=ch.filter(c=>c.issue||c.note);
   const bad=Object.entries(r.systems||{}).filter(([,v])=>v&&v!=="Normal");
   const field=(lbl,txt,ko)=>String(txt||"").trim()?`<div class="dfield"><b>${lbl}</b><p>${esc(txt)}</p>${ko?`<p class="ko">${esc(ko)}</p>`:""}</div>`:"";
