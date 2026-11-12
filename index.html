@@ -227,6 +227,7 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
   .dt .atts{display:flex;flex-wrap:wrap;gap:6px}
   .dt .chip{max-width:100%}
 }
+.seg{display:inline-flex;background:var(--soft,#e4e8ee);border-radius:10px;padding:3px;gap:2px;margin-bottom:12px}.seg button{border:0;background:transparent;padding:7px 16px;border-radius:8px;font:inherit;font-weight:600;color:var(--muted);cursor:pointer}.seg button.on{background:var(--card,#fff);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 [hidden]{display:none!important}
 @media(max-width:640px){.in,.task .in{font-size:16px}.tabs{width:100%;margin:0}.tab{flex:1;padding:6px 4px;font-size:13px}.actions .btn{flex:1}}
 </style>
@@ -300,9 +301,22 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
 </section>
 
 <section id="v-dar" hidden>
-  <div class="tools">
+  <div class="seg" role="tablist" aria-label="Jenis laporan"><button class="on" data-rk="day" role="tab">Harian</button><button data-rk="week" role="tab">Mingguan</button><button data-rk="month" role="tab">Bulanan</button></div>
+  <div class="tools" id="dayTools">
     <label class="f">Tanggal<input type="date" class="in" id="dDate"></label>
     <button class="btn primary" id="dMail">Kirim email</button>
+  </div>
+  <div class="tools" id="weekTools" hidden>
+    <label class="f">Minggu (pilih tanggal mana saja)<input type="date" class="in" id="wDate"></label>
+    <button class="btn" id="wPrev" title="Minggu sebelumnya">‹</button><button class="btn" id="wNext" title="Minggu berikutnya">›</button>
+    <button class="btn" id="wPrint">🖨 Cetak / PDF</button>
+    <button class="btn primary" id="wMail">Kirim email weekly</button>
+  </div>
+  <div class="tools" id="monthTools" hidden>
+    <label class="f">Bulan<input type="month" class="in" id="moDate"></label>
+    <button class="btn" id="moPrev" title="Bulan sebelumnya">‹</button><button class="btn" id="moNext" title="Bulan berikutnya">›</button>
+    <button class="btn" id="moPrint">🖨 Cetak / PDF</button>
+    <button class="btn primary" id="moMail">Kirim email monthly</button>
   </div>
   <div class="dar" id="darBox"></div>
   <div class="evbox" id="evBox" hidden></div>
@@ -620,7 +634,7 @@ function show(v){ const order=["write","mine","dar","memo","review"], from=order
   document.querySelectorAll(".tab").forEach(x=>x.setAttribute("aria-selected",x.dataset.v===v)); order.forEach(n=>$("#v-"+n).hidden=n!==v);
   if(v!==curV){ const el=$("#v-"+v); el.classList.remove("vin-r","vin-l"); void el.offsetWidth; el.classList.add(to>from?"vin-r":"vin-l");
     el.addEventListener("animationend",function f(ev){ if(ev.target===el){ el.classList.remove("vin-r","vin-l"); el.removeEventListener("animationend",f); } }); }
-  curV=v; moveInd(); $("#actions").hidden=v!=="write"; if(v==="mine") loadMine(); if(v==="dar") loadDar(); if(v==="review") loadReview(); if(v==="memo") loadMemos(); window.scrollTo(0,0); }
+  curV=v; moveInd(); $("#actions").hidden=v!=="write"; if(v==="mine") loadMine(); if(v==="dar"&&RK==="day") loadDar(); if(v==="review") loadReview(); if(v==="memo") loadMemos(); if(v==="dar"&&RK==="week") loadWeekly(); if(v==="dar"&&RK==="month") loadMonthly(); window.scrollTo(0,0); }
 $("#date").onchange=async e=>{ if(dirty&&!RO) await save(false,true); loadDate(e.target.value); };
 $("#sys").onclick=e=>{ const b=e.target.closest(".sys"); if(!b) return; const s=b.dataset.sys; R.systems[s]=ST3[(ST3.indexOf(R.systems[s])+1)%3]; renderSys(); changed(); };
 $("#checks").onchange=e=>{ const t=e.target;
@@ -701,6 +715,39 @@ function detailHtml(r){
 }
 
 /* ---------- rekap / DAR ---------- */
+/* ---------- WEEKLY ACTIVITY REPORT ---------- */
+let RK="day";
+const weekStart=d=>{ const x=new Date(d+"T00:00:00"); x.setDate(x.getDate()-((x.getDay()+6)%7)); return iso(x); };
+document.querySelectorAll("[data-rk]").forEach(b=>b.onclick=()=>{ RK=b.dataset.rk; document.querySelectorAll("[data-rk]").forEach(x=>x.classList.toggle("on",x===b));
+  $("#dayTools").hidden=RK!=="day"; $("#weekTools").hidden=RK!=="week"; $("#monthTools").hidden=RK!=="month"; if(RK==="day") loadDar(); else if(RK==="week") loadWeekly(); else loadMonthly(); });
+async function loadWeekly(){ if(!$("#wDate").value) $("#wDate").value=iso(new Date()); const ws=weekStart($("#wDate").value); if(!CACHE) CACHE=cacheGet(); CACHE.week=CACHE.week||{};
+  $("#evBox").hidden=true;
+  if(CACHE.week[ws]) $("#darBox").innerHTML=CACHE.week[ws].html; else $("#darBox").innerHTML='<p style="color:#666">Memuat…</p>';
+  syncing(true); try{ const W=await run("getWeekly",ws,""); CACHE.week[ws]={html:W.html,period:W.period}; const ks=Object.keys(CACHE.week).sort(); if(ks.length>8) delete CACHE.week[ks[0]]; cacheSave(); if(RK==="week"&&weekStart($("#wDate").value)===ws) $("#darBox").innerHTML=W.html; }
+  catch(e){ if(!CACHE.week[ws]) $("#darBox").innerHTML=`<p style="color:var(--bad)">Gagal memuat: ${esc(e.message)}</p>`; } finally{ syncing(false); } }
+$("#wDate").onchange=loadWeekly;
+const shiftWeek=n=>{ const x=new Date(($("#wDate").value||iso(new Date()))+"T00:00:00"); x.setDate(x.getDate()+7*n); $("#wDate").value=iso(x); loadWeekly(); };
+$("#wPrev").onclick=()=>shiftWeek(-1); $("#wNext").onclick=()=>shiftWeek(1);
+/* ---------- MONTHLY ACTIVITY REPORT ---------- */
+async function loadMonthly(){ if(!$("#moDate").value) $("#moDate").value=iso(new Date()).slice(0,7); const mo=$("#moDate").value; if(!CACHE) CACHE=cacheGet(); CACHE.month=CACHE.month||{};
+  $("#evBox").hidden=true;
+  if(CACHE.month[mo]) $("#darBox").innerHTML=CACHE.month[mo]; else $("#darBox").innerHTML='<p style="color:#666">Memuat…</p>';
+  syncing(true); try{ const M=await run("getMonthly",mo,""); CACHE.month[mo]=M.html; const ks=Object.keys(CACHE.month).sort(); if(ks.length>4) delete CACHE.month[ks[0]]; cacheSave(); if(RK==="month"&&$("#moDate").value===mo) $("#darBox").innerHTML=M.html; }
+  catch(e){ if(!CACHE.month[mo]) $("#darBox").innerHTML=`<p style="color:var(--bad)">Gagal memuat: ${esc(e.message)}</p>`; } finally{ syncing(false); } }
+$("#moDate").onchange=loadMonthly;
+const shiftMonth=n=>{ const [y,m]=($("#moDate").value||iso(new Date()).slice(0,7)).split("-").map(Number), d=new Date(y,m-1+n,1); $("#moDate").value=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); loadMonthly(); };
+$("#moPrev").onclick=()=>shiftMonth(-1); $("#moNext").onclick=()=>shiftMonth(1);
+const printBox=title=>{ const w=window.open("","_blank"); if(!w){ toast("Izinkan pop-up untuk mencetak"); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>@page{size:A4;margin:12mm}body{margin:0}tr{page-break-inside:avoid}</style></head><body>${$("#darBox").innerHTML}</body></html>`); w.document.close(); setTimeout(()=>{ w.focus(); w.print(); },400); };
+$("#moPrint").onclick=()=>printBox("Monthly Activity Report");
+$("#moMail").onclick=async()=>{ const b=$("#moMail"); if(!confirm("Kirim Monthly Activity Report ke atasan?")) return; b.disabled=true; b.textContent="Mengirim…";
+  try{ const r=await run("sendMonthlyEmail",$("#moDate").value||iso(new Date()).slice(0,7)); toast("Monthly report terkirim ke "+r.to.join(", ")); }catch(e){ toast(e.message); }
+  b.disabled=false; b.textContent="Kirim email monthly"; };
+$("#wPrint").onclick=()=>{ const w=window.open("","_blank"); if(!w){ toast("Izinkan pop-up untuk mencetak"); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Weekly Activity Report</title><style>@page{size:A4;margin:12mm}body{margin:0}</style></head><body>${$("#darBox").innerHTML}</body></html>`); w.document.close(); setTimeout(()=>{ w.focus(); w.print(); },400); };
+$("#wMail").onclick=async()=>{ const b=$("#wMail"); if(!confirm("Kirim Weekly Activity Report ke atasan?")) return; b.disabled=true; b.textContent="Mengirim…";
+  try{ const r=await run("sendWeeklyEmail",weekStart($("#wDate").value||iso(new Date()))); toast("Weekly report terkirim ke "+r.to.join(", ")); }catch(e){ toast(e.message); }
+  b.disabled=false; b.textContent="Kirim email weekly"; };
 function renderDar(D){ $("#darBox").innerHTML=darHtml(D)+(D.exists?"":'<p style="color:#B23A26;font-size:13px">Belum ada laporan tersimpan untuk tanggal ini.</p>');
   const ev=evidenceHtml(D), box=$("#evBox"); box.hidden=!ev; box.innerHTML=ev; if(ev) loadEvidence(); }
 async function loadDar(){ const d=$("#dDate").value; if(!CACHE) CACHE=cacheGet();
