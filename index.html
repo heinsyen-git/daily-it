@@ -590,7 +590,7 @@ function renderTasks(){
 }
 function renderKo(){ KOF.forEach(f=>{ const el=document.querySelector(`[data-ko=${f}]`); const k=R.ko[f]; el.hidden=!(k&&(R[f]||"").trim()); el.textContent=k||""; }); }
 function status(){ const s=$("#st"); s.classList.toggle("dirty",dirty); s.textContent=RO?"Hanya baca":saving?"Menyimpan…":dirty?"Ada perubahan, tersimpan otomatis…":R.status?("Tersimpan di Google Sheets ("+R.status+")"):"Belum disimpan"; $("#sendBtn").textContent=R.status==="Terkirim"?"Kirim ulang":"Kirim ke atasan"; }
-function changed(){ if(RO){ toast("Hanya baca: laporan ini sedang diedit di jendela lain"); return; } dirty=true; editSeq++; status(); clearTimeout(autoT); autoT=setTimeout(()=>save(false,true),2000); }
+function changed(){ if(RO){ toast("Hanya baca: laporan ini sedang diedit di jendela lain"); return; } dirty=true; editSeq++; status(); clearTimeout(autoT); autoT=setTimeout(()=>save(false,true),900); }
 
 /* ---------- save ---------- */
 function payload(){ return {...R, changed:true, sid:SID, dev:DEV}; }
@@ -634,7 +634,7 @@ function show(v){ const order=["write","mine","dar","memo","review"], from=order
   document.querySelectorAll(".tab").forEach(x=>x.setAttribute("aria-selected",x.dataset.v===v)); order.forEach(n=>$("#v-"+n).hidden=n!==v);
   if(v!==curV){ const el=$("#v-"+v); el.classList.remove("vin-r","vin-l"); void el.offsetWidth; el.classList.add(to>from?"vin-r":"vin-l");
     el.addEventListener("animationend",function f(ev){ if(ev.target===el){ el.classList.remove("vin-r","vin-l"); el.removeEventListener("animationend",f); } }); }
-  curV=v; moveInd(); $("#actions").hidden=v!=="write"; if(v==="mine") loadMine(); if(v==="dar"&&RK==="day") loadDar(); if(v==="review") loadReview(); if(v==="memo") loadMemos(); if(v==="dar"&&RK==="week") loadWeekly(); if(v==="dar"&&RK==="month") loadMonthly(); window.scrollTo(0,0); }
+  curV=v; moveInd(); $("#actions").hidden=v!=="write"; if(v==="mine") loadMine(); if(v==="dar"&&RK==="day") loadDar(); if(v==="review") loadReview(); if(v==="memo") loadMemos(); if(v==="dar"&&RK==="week") loadWeekly(); if(v==="dar"&&RK==="month") loadMonthly(); if(v==="dar") setTimeout(prefetchReports,800); window.scrollTo(0,0); }
 $("#date").onchange=async e=>{ if(dirty&&!RO) await save(false,true); loadDate(e.target.value); };
 $("#sys").onclick=e=>{ const b=e.target.closest(".sys"); if(!b) return; const s=b.dataset.sys; R.systems[s]=ST3[(ST3.indexOf(R.systems[s])+1)%3]; renderSys(); changed(); };
 $("#checks").onchange=e=>{ const t=e.target;
@@ -735,6 +735,12 @@ async function loadMonthly(){ if(!$("#moDate").value) $("#moDate").value=iso(new
   syncing(true); try{ const M=await run("getMonthly",mo,""); CACHE.month[mo]=M.html; const ks=Object.keys(CACHE.month).sort(); if(ks.length>4) delete CACHE.month[ks[0]]; cacheSave(); if(RK==="month"&&$("#moDate").value===mo) $("#darBox").innerHTML=M.html; }
   catch(e){ if(!CACHE.month[mo]) $("#darBox").innerHTML=`<p style="color:var(--bad)">Gagal memuat: ${esc(e.message)}</p>`; } finally{ syncing(false); } }
 $("#moDate").onchange=loadMonthly;
+/* siapkan laporan mingguan & bulanan di latar belakang saat tab Data Report dibuka */
+let PREF_AT=0;
+async function prefetchReports(){ if(Date.now()-PREF_AT<60000) return; PREF_AT=Date.now(); if(!CACHE) CACHE=cacheGet(); CACHE.week=CACHE.week||{}; CACHE.month=CACHE.month||{};
+  const t=iso(new Date()), ws=weekStart(t), mo=t.slice(0,7);
+  try{ if(RK!=="week"){ const W=await run("getWeekly",ws,""); CACHE.week[ws]={html:W.html,period:W.period}; cacheSave(); } }catch(e){}
+  try{ if(RK!=="month"){ const M=await run("getMonthly",mo,""); CACHE.month[mo]=M.html; cacheSave(); } }catch(e){} }
 const shiftMonth=n=>{ const [y,m]=($("#moDate").value||iso(new Date()).slice(0,7)).split("-").map(Number), d=new Date(y,m-1+n,1); $("#moDate").value=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); loadMonthly(); };
 $("#moPrev").onclick=()=>shiftMonth(-1); $("#moNext").onclick=()=>shiftMonth(1);
 const printBox=title=>{ const w=window.open("","_blank"); if(!w){ toast("Izinkan pop-up untuk mencetak"); return; }
