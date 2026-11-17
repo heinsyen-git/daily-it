@@ -228,6 +228,13 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
   .dt .chip{max-width:100%}
 }
 .seg{display:inline-flex;background:var(--soft,#e4e8ee);border-radius:10px;padding:3px;gap:2px;margin-bottom:12px}.seg button{border:0;background:transparent;padding:7px 16px;border-radius:8px;font:inherit;font-weight:600;color:var(--muted);cursor:pointer}.seg button.on{background:var(--card,#fff);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.stwrap{display:flex;flex-direction:column;gap:5px;flex:1;min-width:0}
+.svbar{display:flex;align-items:center;gap:8px;max-width:320px}
+.svtrack{flex:1;height:7px;border-radius:99px;background:rgba(127,140,160,.22);overflow:hidden}
+.svtrack i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accent),#3fb3a8);transition:width .15s linear}
+.svbar b{font-size:12px;min-width:38px;text-align:right;color:var(--accent);font-variant-numeric:tabular-nums}
+.svbar.ok .svtrack i{background:#2E7D4F}.svbar.ok b{color:#2E7D4F}
+.svbar.err .svtrack i{background:var(--bad)}.svbar.err b{color:var(--bad)}
 [hidden]{display:none!important}
 @media(max-width:640px){.in,.task .in{font-size:16px}.tabs{width:100%;margin:0}.tab{flex:1;padding:6px 4px;font-size:13px}.actions .btn{flex:1}}
 </style>
@@ -377,7 +384,7 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
 </main>
 
 <div class="actions" id="actions"><div class="actions-in">
-  <span class="st" id="st">Memuat…</span>
+  <div class="stwrap"><span class="st" id="st">Memuat…</span><div class="svbar" id="svBar" hidden><span class="svtrack"><i id="svFill"></i></span><b id="svPct">0%</b></div></div>
   <button class="btn" id="saveBtn">Simpan draf</button>
   <button class="btn primary" id="sendBtn">Kirim ke atasan</button>
 </div></div>
@@ -592,6 +599,15 @@ function renderKo(){ KOF.forEach(f=>{ const el=document.querySelector(`[data-ko=
 function status(){ const s=$("#st"); s.classList.toggle("dirty",dirty); s.textContent=RO?"Hanya baca":saving?"Menyimpan…":dirty?"Ada perubahan, tersimpan otomatis…":R.status?("Tersimpan di Google Sheets ("+R.status+")"):"Belum disimpan"; $("#sendBtn").textContent=R.status==="Terkirim"?"Kirim ulang":"Kirim ke atasan"; }
 function changed(){ if(RO){ toast("Hanya baca: laporan ini sedang diedit di jendela lain"); return; } dirty=true; editSeq++; status(); clearTimeout(autoT); autoT=setTimeout(()=>save(false,true),900); }
 
+/* ---------- progress bar simpan 0–100% ---------- */
+let svT=null, svP=0, svHide=null;
+function progStart(){ const b=$("#svBar"); if(!b) return; clearTimeout(svHide); clearInterval(svT); svP=0; b.hidden=false; b.className="svbar"; progSet(3);
+  svT=setInterval(()=>{ progSet(svP+Math.max(0.4,(92-svP)*0.06)); },120); }   // maju cepat lalu melambat sampai ±92% sambil menunggu server
+function progSet(v){ svP=Math.min(99,v); $("#svFill").style.width=svP+"%"; $("#svPct").textContent=Math.floor(svP)+"%"; }
+function progDone(ok){ const b=$("#svBar"); if(!b) return; clearInterval(svT);
+  if(ok){ svP=100; $("#svFill").style.width="100%"; $("#svPct").textContent="100%"; b.className="svbar ok"; svHide=setTimeout(()=>{ b.hidden=true; },1800); }
+  else { b.className="svbar err"; $("#svPct").textContent="Gagal"; svHide=setTimeout(()=>{ b.hidden=true; },4000); } }
+
 /* ---------- save ---------- */
 function payload(){ return {...R, changed:true, sid:SID, dev:DEV}; }
 async function save(submit,silent,sendEmail){
@@ -602,7 +618,7 @@ async function save(submit,silent,sendEmail){
     if(!R.tasks.length){ toast("Tambahkan minimal satu aktivitas"); return; }
     if(isWeekend(R.date)&&!(R.lembur.alasan||"").trim()){ toast("Alasan lembur wajib diisi"); return; }
   }
-  saving=true; status(); const seq=editSeq; clearTimeout(autoT);
+  saving=true; status(); const seq=editSeq; clearTimeout(autoT); progStart(); let okSave=false;
   try{
     const p=payload(); p.sendEmail=!!sendEmail;
     const g=await run("saveReport",p,!!submit);
@@ -611,7 +627,7 @@ async function save(submit,silent,sendEmail){
       const mk=R.date.slice(0,7), L=CACHE.list[mk]||(CACHE.list[mk]=[]), row={id:R.id||R.date,date:R.date,status:R.status,lembur:String(hours(R.lembur.mulai,R.lembur.selesai)||0),tasks:R.tasks.length,done:R.tasks.filter(t=>t.status==="Selesai").length,approvedBy:R.approvedBy||"",approvedAt:R.approvedAt||""};
       const ix=L.findIndex(x=>x.date===R.date); if(ix>=0) Object.assign(L[ix],row); else { L.push(row); L.sort((x,y)=>y.date.localeCompare(x.date)); }
       cacheSave(); }catch(_){}
-    if(seq===editSeq) dirty=false;
+    if(seq===editSeq) dirty=false; okSave=true;
     renderBanner();
     if(!silent) toast(submit?(g.mail&&g.mail.ok?"Email laporan terkirim ke atasan":"Email gagal: "+((g.mail&&g.mail.error)||"tidak diketahui")):"Tersimpan di Google Sheets");
   }catch(e){
@@ -620,6 +636,7 @@ async function save(submit,silent,sendEmail){
     else if(/^KONFLIK:/.test(m)) setReadOnly(true,"<b>Laporan sudah berubah di tempat lain.</b> Supaya tidak saling menimpa, muat versi terbaru dulu, lalu lanjutkan mengisi.");
     else toast("Gagal menyimpan: "+m);
   }
+  progDone(okSave);
   saving=false; status();
 }
 
