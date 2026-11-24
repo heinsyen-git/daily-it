@@ -235,6 +235,8 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
 .svbar b{font-size:12px;min-width:38px;text-align:right;color:var(--accent);font-variant-numeric:tabular-nums}
 .svbar.ok .svtrack i{background:#2E7D4F}.svbar.ok b{color:#2E7D4F}
 .svbar.err .svtrack i{background:var(--bad)}.svbar.err b{color:var(--bad)}
+.mcount{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding:12px 16px;margin:0 0 12px}.mcount b{font-size:15px}.mc-set{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-left:auto}.mc-set .in{width:110px}
+.mf-no .btn{margin-left:auto}.item .mdel{color:var(--bad)}.mf-foot{display:flex;gap:8px;flex-wrap:wrap}
 [hidden]{display:none!important}
 @media(max-width:640px){.in,.task .in{font-size:16px}.tabs{width:100%;margin:0}.tab{flex:1;padding:6px 4px;font-size:13px}.actions .btn{flex:1}}
 </style>
@@ -332,6 +334,7 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
 <section id="v-memo" hidden>
   <div id="memoList">
     <div class="tools" style="justify-content:space-between"><div><h2 style="margin:0">Internal Memo</h2><p class="hint" style="margin:2px 0 0">Nomor dokumen dibuat otomatis dan berlanjut terus.</p></div><button class="btn primary" id="mNew">+ Buat memo baru</button></div>
+    <div class="mcount card"><span>Nomor surat berikutnya: <b id="mNext">…</b></span><label class="mc-set">Mulai / lanjut dari nomor <input class="in" id="mNextIn" type="number" min="1" placeholder="misal 74"></label><button class="btn sm" id="mNextSave">Atur</button></div>
     <div class="list" id="mmList"><p class="hint">Memuat…</p></div>
   </div>
   <div id="memoEdit" hidden>
@@ -340,7 +343,7 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
       <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="hint" id="meStat" style="align-self:center"></span><button class="btn" id="mePrint">🖨 Cetak / PDF</button><button class="btn primary" id="meSave">Simpan</button></div>
     </div>
     <div class="card memo-form">
-      <div class="mf-no"><span>No. Dokumen</span><b id="meNo">otomatis saat disimpan</b></div>
+      <div class="mf-no"><span>No. Dokumen</span><b id="meNo">otomatis saat disimpan</b><button class="btn sm" id="meRenum" hidden>✎ Ubah nomor</button></div>
       <h3>1. Informasi Penyusun</h3>
       <div class="mf-grid">
         <label class="f">Divisi / Jabatan<input class="in" data-m="divisi"></label>
@@ -371,7 +374,7 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
       <h3>4. Lampiran</h3>
       <div id="meAtt"></div>
       <label class="att-add" style="margin-top:6px">📎 Tambah lampiran (foto/PDF)<input type="file" hidden multiple accept="image/*,application/pdf" id="meFile"></label>
-      <div class="mf-foot"><button class="btn" id="meCancel" style="color:var(--bad)">Batalkan memo</button></div>
+      <div class="mf-foot"><button class="btn" id="meCancel" style="color:var(--bad)">Batalkan memo</button><button class="btn" id="meDel" style="color:var(--bad)">🗑 Hapus memo</button></div>
     </div>
   </div>
 </section>
@@ -890,12 +893,20 @@ $("#chkTg").onclick=()=>setChk($("#chkCard").classList.contains("closed"));
 let MEMO=null, MEMO_DIRTY=false, MEMOS=[];
 const M_FIELDS=["divisi","tanggal","penyusun","tembusan","pengaju","pelaksana","judul","software","pengguna","jumlah","department","subjek","alasan","tujuan","manfaat","rincian","pendapat","penutup"];
 const dmyLong=iso=>{ try{ return new Date(iso+"T00:00:00").toLocaleDateString("id-ID",{weekday:"long",day:"2-digit",month:"short",year:"numeric"}); }catch(e){ return iso; } };
-async function loadMemos(){ $("#memoEdit").hidden=true; $("#memoList").hidden=false;
+async function refreshNext(){ try{ const n=await run("nextMemoNo",iso(new Date())); $("#mNext").textContent=n.no; $("#mNextIn").placeholder=String(n.seq); }catch(e){ $("#mNext").textContent="-"; } }
+$("#mNextSave").onclick=async()=>{ const v=$("#mNextIn").value.trim(); if(!v){ toast("Isi nomor urut berikutnya, misalnya 74"); return; }
+  if(!confirm("Memo baru berikutnya akan bernomor urut "+v+", lalu berlanjut otomatis. Lanjutkan?")) return;
+  try{ const n=await run("setMemoCounter",v); $("#mNext").textContent=n.no; $("#mNextIn").value=""; toast("Memo berikutnya: "+n.no); }catch(e){ toast(e.message); } };
+async function delMemo(m){ if(!confirm(`Hapus memo ${m.no} "${m.title}"?\n\nData memo dihapus permanen dari database.`)) return;
+  try{ const r=await run("deleteMemo",m.id); if(CACHE){ CACHE.memos=(CACHE.memos||[]).filter(x=>x.id!==m.id); if(CACHE.memoFull) delete CACHE.memoFull[m.id]; cacheSave(); }
+    toast(r.reused?"Memo dihapus. Nomornya akan dipakai lagi untuk memo berikutnya.":"Memo dihapus. Nomor ini tidak dipakai ulang agar urutan surat lain tidak berubah."); loadMemos(); }catch(e){ toast(e.message); } }
+async function loadMemos(){ $("#memoEdit").hidden=true; $("#memoList").hidden=false; refreshNext();
   if(!CACHE) CACHE=cacheGet(); if(CACHE.memos) renderMemos(CACHE.memos);
   try{ const l=await run("listMemos"); CACHE.memos=l; cacheSave(); renderMemos(l); }catch(e){ if(!CACHE.memos) $("#mmList").innerHTML=`<p class="hint" style="color:var(--bad)">Gagal memuat: ${esc(e.message)}</p>`; } }
 function renderMemos(l){ MEMOS=l; setTimeout(()=>prefetchMemos(l),300);
-  $("#mmList").innerHTML=l.length?l.map(m=>`<div class="item"><div><h3>${esc(m.no)} <span class="pill ${m.status==="Batal"?"bad":m.status==="Final"?"ok":""}">${esc(m.status)}</span></h3><p>${esc(m.title)} · ${esc(fmtLong(m.date))}</p></div><button class="btn sm" data-mprint="${esc(m.id)}">🖨 Cetak</button><button class="btn sm primary" data-mopen="${esc(m.id)}">Buka</button></div>`).join(""):'<p class="hint">Belum ada memo. Klik <b>+ Buat memo baru</b>.</p>'; }
-$("#mmList").onclick=async e=>{ const o=e.target.closest("[data-mopen]"), pr=e.target.closest("[data-mprint]");
+  $("#mmList").innerHTML=l.length?l.map(m=>`<div class="item"><div><h3>${esc(m.no)} <span class="pill ${m.status==="Batal"?"bad":m.status==="Final"?"ok":""}">${esc(m.status)}</span></h3><p>${esc(m.title)} · ${esc(fmtLong(m.date))}</p></div><button class="btn sm" data-mprint="${esc(m.id)}">🖨 Cetak</button><button class="btn sm primary" data-mopen="${esc(m.id)}">Buka</button><button class="btn sm mdel" data-mdel2="${esc(m.id)}" title="Hapus memo">🗑</button></div>`).join(""):'<p class="hint">Belum ada memo. Klik <b>+ Buat memo baru</b>.</p>'; }
+$("#mmList").onclick=async e=>{ const o=e.target.closest("[data-mopen]"), pr=e.target.closest("[data-mprint]"), dl=e.target.closest("[data-mdel2]");
+  if(dl){ const m=MEMOS.find(x=>x.id===dl.dataset.mdel2); if(m) delMemo(m); return; }
   if(o){ const id=o.dataset.mopen, c=memoCached(id); if(c) openMemo(c);
     try{ const m=await fetchMemo(id); if(!c) openMemo(m); else if(MEMO&&MEMO.id===id&&!MEMO_DIRTY) openMemo(m); }catch(err){ if(!c) toast(err.message); } }
   if(pr){ const id=pr.dataset.mprint, c=memoCached(id); try{ printMemo(c||await fetchMemo(id)); }catch(err){ toast(err.message); } } };
@@ -919,24 +930,34 @@ function openMemo(m,nx){ MEMO=JSON.parse(JSON.stringify(m)); MEMO.data=MEMO.data
   $("#memoList").hidden=true; $("#memoEdit").hidden=false;
   $("#meNo").textContent=MEMO.no||(nx?nx.no+" (perkiraan, dipastikan saat disimpan)":"menyiapkan nomor…");
   document.querySelectorAll("[data-m]").forEach(el=>el.value=MEMO.data[el.dataset.m]||"");
-  $("#meCancel").hidden=!MEMO.id||MEMO.status==="Batal"; memoStat(); renderMemoAtt(); window.scrollTo(0,0); }
+  $("#meCancel").hidden=!MEMO.id||MEMO.status==="Batal"; $("#meDel").hidden=!MEMO.id; $("#meRenum").hidden=!MEMO.id; memoStat(); renderMemoAtt(); window.scrollTo(0,0); }
 function memoStat(t){ $("#meStat").textContent=t||(MEMO.id?(MEMO.status==="Batal"?"Memo dibatalkan":"Tersimpan"):"Belum disimpan"); }
-let MDT=null;
-$("#memoEdit").addEventListener("input",e=>{ const k=e.target.dataset.m; if(!k||!MEMO) return; MEMO.data[k]=e.target.value; MEMO_DIRTY=true; memoStat("Ada perubahan belum disimpan");
-  clearTimeout(MDT); MDT=setTimeout(()=>{ try{ if(!MEMO.id) localStorage.setItem(memoDraftKey(),JSON.stringify({data:MEMO.data,at:Date.now()})); }catch(_){} },600); });
+let MDT=null, MAS=null, MSEQ=0, MSAVING=null;
+/* simpan otomatis: memo baru disimpan di perangkat (nomor diberikan saat Simpan), memo yang sudah bernomor disimpan ke Google Sheets */
+function memoTouched(){ MEMO_DIRTY=true; MSEQ++; memoStat("Ada perubahan, menyimpan otomatis…");
+  clearTimeout(MDT); MDT=setTimeout(()=>{ try{ if(!MEMO.id){ localStorage.setItem(memoDraftKey(),JSON.stringify({data:MEMO.data,at:Date.now()})); memoStat("✓ Draf tersimpan otomatis di perangkat · nomor surat diberikan saat klik Simpan"); } }catch(_){} },600);
+  clearTimeout(MAS); if(MEMO.id) MAS=setTimeout(autoSaveMemo,1500); }
+async function autoSaveMemo(){ if(!MEMO||!MEMO.id||!MEMO_DIRTY) return; if(MSAVING){ await MSAVING; if(!MEMO_DIRTY) return; }
+  const seq=MSEQ, id=MEMO.id; memoStat("Menyimpan otomatis…");
+  MSAVING=run("saveMemo",{id,updated:MEMO.updated,date:MEMO.data.tanggal,status:MEMO.status,data:MEMO.data}).then(r=>{ if(!MEMO||MEMO.id!==id) return; MEMO.updated=r.updated; memoPut(r);
+      if(seq===MSEQ){ MEMO_DIRTY=false; memoStat("✓ Tersimpan otomatis "+new Date().toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})); } })
+    .catch(e=>{ memoStat("Gagal simpan otomatis, klik Simpan"); toast(e.message.replace(/^KONFLIK:\s*/,"")); }).finally(()=>{ MSAVING=null; });
+  return MSAVING; }
+async function flushMemo(){ clearTimeout(MAS); if(MEMO&&MEMO.id&&MEMO_DIRTY) await autoSaveMemo(); else if(MSAVING) await MSAVING; }
+$("#memoEdit").addEventListener("input",e=>{ const k=e.target.dataset.m; if(!k||!MEMO) return; MEMO.data[k]=e.target.value; memoTouched(); });
 function renderMemoAtt(){ const L=MEMO.data.lampiran;
   $("#meAtt").innerHTML=L.length?L.map((a,i)=>`<div class="m-att"><button class="chip-open" data-mview="${i}">${/^image\//.test(a.mime||"")?"🖼":"📄"} ${esc(a.name)}</button><input class="in" data-mket="${i}" value="${esc(a.ket||"")}" placeholder="Keterangan, misalnya link https://… atau Prototype HRD"><button class="x" data-mdel="${i}" aria-label="Hapus lampiran">×</button></div>`).join(""):'<p class="hint" style="margin:0">Belum ada lampiran.</p>'; }
-$("#meAtt").addEventListener("input",e=>{ const i=e.target.dataset.mket; if(i==null) return; MEMO.data.lampiran[+i].ket=e.target.value; MEMO_DIRTY=true; memoStat("Ada perubahan belum disimpan"); });
+$("#meAtt").addEventListener("input",e=>{ const i=e.target.dataset.mket; if(i==null) return; MEMO.data.lampiran[+i].ket=e.target.value; memoTouched(); });
 $("#meAtt").addEventListener("click",e=>{ const v=e.target.closest("[data-mview]"), d=e.target.closest("[data-mdel]");
   if(v) openAttachment(MEMO.data.lampiran[+v.dataset.mview]);
-  if(d){ MEMO.data.lampiran.splice(+d.dataset.mdel,1); MEMO_DIRTY=true; renderMemoAtt(); memoStat("Ada perubahan belum disimpan"); } });
+  if(d){ MEMO.data.lampiran.splice(+d.dataset.mdel,1); renderMemoAtt(); memoTouched(); } });
 $("#meFile").onchange=async e=>{ const files=[...e.target.files]; e.target.value="";
   for(const f of files){ const isImg=/^image\//.test(f.type)&&!/svg/.test(f.type); if(!isImg&&f.size>10*1024*1024){ toast(f.name+" terlalu besar (maks 10 MB)"); continue; }
     memoStat("Mengunggah "+f.name+"…");
     try{ const d=isImg?await shrinkImage(f):await readFile(f); const r=await run("uploadAttachment",MEMO.data.tanggal||iso(new Date()),d.name,d.mime,d.data);
-      MEMO.data.lampiran.push({id:r.id,name:r.name,mime:r.mime,ket:""}); MEMO_DIRTY=true; renderMemoAtt(); memoStat("Lampiran ditambahkan, jangan lupa Simpan"); }
+      MEMO.data.lampiran.push({id:r.id,name:r.name,mime:r.mime,ket:""}); renderMemoAtt(); memoTouched(); }
     catch(err){ toast("Gagal unggah: "+err.message); memoStat(); } } };
-$("#meSave").onclick=async()=>{ if(!String(MEMO.data.judul||"").trim()){ toast("Isi judul memo"); return; }
+$("#meSave").onclick=async()=>{ if(!String(MEMO.data.judul||"").trim()){ toast("Isi judul memo"); return; } clearTimeout(MAS); if(MSAVING) await MSAVING;
   const b=$("#meSave"); b.disabled=true; memoStat("Menyimpan…");
   try{ const r=await run("saveMemo",{id:MEMO.id,updated:MEMO.updated,date:MEMO.data.tanggal,status:MEMO.status==="Batal"?"Batal":MEMO.status,data:MEMO.data});
     const isNew=!MEMO.id; memoPut(r);
@@ -946,7 +967,10 @@ $("#meSave").onclick=async()=>{ if(!String(MEMO.data.judul||"").trim()){ toast("
   catch(e){ toast(e.message.replace(/^KONFLIK:\s*/,"")); memoStat(); }
   b.disabled=false; };
 document.addEventListener("keydown",e=>{ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"&&curV==="memo"&&!$("#memoEdit").hidden){ e.preventDefault(); $("#meSave").click(); } });
-$("#meBack").onclick=()=>{ if(MEMO_DIRTY&&!confirm("Ada perubahan yang belum disimpan. Tetap kembali?")) return; loadMemos(); };
+$("#meDel").onclick=()=>{ if(MEMO&&MEMO.id){ MEMO_DIRTY=false; clearTimeout(MAS); delMemo({id:MEMO.id,no:MEMO.no,title:MEMO.data.judul||MEMO.title}); } };
+$("#meRenum").onclick=async()=>{ const cur=MEMO.seq||""; const v=prompt("Nomor urut untuk memo ini (angka). Contoh: 74\nNomor surat berikutnya akan melanjutkan dari nomor terbesar.",cur); if(!v||String(v)===String(cur)) return;
+  try{ await flushMemo(); const r=await run("renumberMemo",MEMO.id,v); memoPut(r); openMemo(r); toast("Nomor diubah menjadi "+r.no); }catch(e){ toast(e.message); } };
+$("#meBack").onclick=async()=>{ if(MEMO&&MEMO.id){ await flushMemo(); loadMemos(); return; } if(MEMO_DIRTY&&!confirm("Memo baru belum disimpan ke Google Sheets (draf tetap tersimpan di perangkat). Kembali ke daftar?")) return; loadMemos(); };
 $("#meCancel").onclick=async()=>{ if(!confirm("Batalkan memo "+MEMO.no+"? Nomornya tidak akan dipakai ulang.")) return;
   try{ await run("cancelMemo",MEMO.id); MEMO.status="Batal"; toast("Memo dibatalkan"); loadMemos(); }catch(e){ toast(e.message); } };
 $("#mePrint").onclick=()=>{ if(!MEMO.id&&!confirm("Memo belum disimpan, nomor dokumen belum resmi. Tetap cetak pratinjau?")) return; printMemo(MEMO); };
