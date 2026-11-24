@@ -237,6 +237,8 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
 .svbar.err .svtrack i{background:var(--bad)}.svbar.err b{color:var(--bad)}
 .mcount{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding:12px 16px;margin:0 0 12px}.mcount b{font-size:15px}.mc-set{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-left:auto}.mc-set .in{width:110px}
 .mf-no .btn{margin-left:auto}.item .mdel{color:var(--bad)}.mf-foot{display:flex;gap:8px;flex-wrap:wrap}
+.mlang{width:auto;padding:8px 10px}
+.mstat{display:flex;flex-direction:column;align-items:flex-end;gap:4px;align-self:center;min-width:220px}.mstat .svbar{width:220px}
 [hidden]{display:none!important}
 @media(max-width:640px){.in,.task .in{font-size:16px}.tabs{width:100%;margin:0}.tab{flex:1;padding:6px 4px;font-size:13px}.actions .btn{flex:1}}
 </style>
@@ -340,7 +342,7 @@ body.syncing .brand .mark::after{content:"";position:absolute;right:-3px;top:-3p
   <div id="memoEdit" hidden>
     <div class="tools" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
       <button class="btn" id="meBack">← Daftar memo</button>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="hint" id="meStat" style="align-self:center"></span><button class="btn" id="mePrint">🖨 Cetak / PDF</button><button class="btn primary" id="meSave">Simpan</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="mstat"><span class="hint" id="meStat"></span><span class="svbar" id="mpBar" hidden><span class="svtrack"><i id="mpFill"></i></span><b id="mpPct">0%</b></span></span><select class="in mlang" id="meLang" title="Bahasa cetak"><option value="id">🇮🇩 Indonesia</option><option value="en">🇬🇧 English</option><option value="ko">🇰🇷 한국어</option></select><button class="btn" id="mePrint">🖨 Cetak / PDF</button><button class="btn primary" id="meSave">Simpan</button></div>
     </div>
     <div class="card memo-form">
       <div class="mf-no"><span>No. Dokumen</span><b id="meNo">otomatis saat disimpan</b><button class="btn sm" id="meRenum" hidden>✎ Ubah nomor</button></div>
@@ -892,7 +894,18 @@ $("#chkTg").onclick=()=>setChk($("#chkCard").classList.contains("closed"));
 /* ================= INTERNAL MEMO ================= */
 let MEMO=null, MEMO_DIRTY=false, MEMOS=[];
 const M_FIELDS=["divisi","tanggal","penyusun","tembusan","pengaju","pelaksana","judul","software","pengguna","jumlah","department","subjek","alasan","tujuan","manfaat","rincian","pendapat","penutup"];
-const dmyLong=iso=>{ try{ return new Date(iso+"T00:00:00").toLocaleDateString("id-ID",{weekday:"long",day:"2-digit",month:"short",year:"numeric"}); }catch(e){ return iso; } };
+const dmyLong=(iso,lang)=>{ try{ return new Date(iso+"T00:00:00").toLocaleDateString(lang==="en"?"en-GB":lang==="ko"?"ko-KR":"id-ID",{weekday:"long",day:"2-digit",month:"short",year:"numeric"}); }catch(e){ return iso; } };
+/* label cetak memo per bahasa */
+const ML={
+ id:{title:"INTERNAL MEMO",appr:"PERSETUJUAN",pic:"PIC IT",dir:"DIREKTUR",ceo:"DIREKTUR UTAMA",s1:"INFORMASI PENYUSUN",div:"DIVISI / JABATAN",date:"TANGGAL",by:"PENYUSUN",cc:"TEMBUSAN",req:"DIVISI PENGAJU",exe:"DIVISI PELAKSANA",no:"NO. DOKUMEN",subj:"JUDUL",s2:"ISI PENGAJUAN",sw:"SOFTWARE",user:"PENGGUNA",nuser:"JUMLAH USER",dept:"DEPARTMENT",topic:"SUBJEK",why:"ALASAN",goal:"TUJUAN",ben:"MANFAAT",s3:"RINCIAN DAN PENDAPAT AKHIR",item:"ITEM",det:"RINCIAN",cost:"RINCIAN BIAYA",fin:"PENDAPAT AKHIR",s4:"LAMPIRAN",lamp:"LAMPIRAN",lampSub:"FOTO / DOKUMEN PENDUKUNG",ket:"KETERANGAN",close:"Mohon ditinjau dan disetujui.",nono:"(belum bernomor)"},
+ en:{title:"INTERNAL MEMO",appr:"APPROVAL",pic:"IT PIC",dir:"DIRECTOR",ceo:"PRESIDENT DIRECTOR",s1:"PREPARER INFORMATION",div:"DIVISION / POSITION",date:"DATE",by:"PREPARED BY",cc:"CC",req:"REQUESTING DIVISION",exe:"EXECUTING DIVISION",no:"DOCUMENT NO.",subj:"TITLE",s2:"REQUEST DETAILS",sw:"SOFTWARE / ITEM",user:"USERS",nuser:"NUMBER OF USERS",dept:"DEPARTMENT",topic:"SUBJECT",why:"REASON",goal:"OBJECTIVE",ben:"BENEFITS",s3:"COST DETAILS AND FINAL REMARKS",item:"ITEM",det:"DETAILS",cost:"COST DETAILS",fin:"FINAL REMARKS",s4:"ATTACHMENTS",lamp:"ATTACHMENT",lampSub:"SUPPORTING PHOTO / DOCUMENT",ket:"NOTES",close:"Kindly review and approve.",nono:"(not yet numbered)"},
+ ko:{title:"내부 품의서",appr:"결재",pic:"IT 담당",dir:"이사",ceo:"대표이사",s1:"작성자 정보",div:"부서 / 직위",date:"날짜",by:"작성자",cc:"참조",req:"요청 부서",exe:"집행 부서",no:"문서 번호",subj:"제목",s2:"요청 내용",sw:"소프트웨어 / 품목",user:"사용자",nuser:"사용자 수",dept:"부서",topic:"주제",why:"사유",goal:"목적",ben:"기대 효과",s3:"비용 내역 및 최종 의견",item:"항목",det:"내역",cost:"비용 내역",fin:"최종 의견",s4:"첨부",lamp:"첨부",lampSub:"증빙 사진 / 문서",ket:"비고",close:"검토 후 승인 부탁드립니다.",nono:"(번호 미부여)"}};
+/* terjemahan memo: disimpan per bahasa, diterjemahkan ulang hanya jika isi berubah */
+const memoSrcKey=D=>JSON.stringify(["divisi","pengaju","pelaksana","judul","software","pengguna","jumlah","department","subjek","alasan","tujuan","manfaat","rincian","pendapat","penutup"].map(k=>D[k]||"").concat((D.lampiran||[]).map(a=>a.ket||"")));
+async function memoTr(m,lang){ if(lang==="id") return null; const D=m.data||{}, key=memoSrcKey(D); D.tr=D.tr||{};
+  if(D.tr[lang]&&D.tr[lang].src===key) return D.tr[lang].t;
+  const t=await run("translateMemo",D,lang); D.tr[lang]={src:key,t}; return t; }
+let MLANG=(()=>{ try{ return localStorage.getItem("lhit-memo-lang")||"id"; }catch(e){ return "id"; } })();
 async function refreshNext(){ try{ const n=await run("nextMemoNo",iso(new Date())); $("#mNext").textContent=n.no; $("#mNextIn").placeholder=String(n.seq); }catch(e){ $("#mNext").textContent="-"; } }
 $("#mNextSave").onclick=async()=>{ const v=$("#mNextIn").value.trim(); if(!v){ toast("Isi nomor urut berikutnya, misalnya 74"); return; }
   if(!confirm("Memo baru berikutnya akan bernomor urut "+v+", lalu berlanjut otomatis. Lanjutkan?")) return;
@@ -925,7 +938,8 @@ $("#mNew").onclick=()=>{ const d=iso(new Date()), last=memoLast();
   try{ const dr=JSON.parse(localStorage.getItem(memoDraftKey())||"null"); if(dr&&dr.data&&(dr.data.judul||dr.data.subjek)&&confirm("Ada draf memo yang belum disimpan (\""+(dr.data.judul||dr.data.subjek)+"\"). Lanjutkan draf itu?")) data=dr.data; else localStorage.removeItem(memoDraftKey()); }catch(e){}
   data.tanggal=data.tanggal||d;
   openMemo({id:"",no:"",status:"Draf",date:data.tanggal,data});                   // langsung tampil, tanpa menunggu server
-  run("nextMemoNo",data.tanggal).then(nx=>{ if(MEMO&&!MEMO.id) $("#meNo").textContent=nx.no+" (perkiraan, dipastikan saat disimpan)"; }).catch(()=>{}); };
+  run("nextMemoNo",data.tanggal).then(nx=>{ if(MEMO&&!MEMO.id) $("#meNo").textContent=nx.no+" (perkiraan, dipastikan saat disimpan)"; }).catch(()=>{ if(MEMO&&!MEMO.id) $("#meNo").textContent="otomatis saat disimpan"; });
+  memoStat("Isi Judul, lalu memo tersimpan otomatis ke Google Sheets"); };
 function openMemo(m,nx){ MEMO=JSON.parse(JSON.stringify(m)); MEMO.data=MEMO.data||{}; MEMO.data.lampiran=MEMO.data.lampiran||[]; MEMO_DIRTY=false;
   $("#memoList").hidden=true; $("#memoEdit").hidden=false;
   $("#meNo").textContent=MEMO.no||(nx?nx.no+" (perkiraan, dipastikan saat disimpan)":"menyiapkan nomor…");
@@ -933,15 +947,25 @@ function openMemo(m,nx){ MEMO=JSON.parse(JSON.stringify(m)); MEMO.data=MEMO.data
   $("#meCancel").hidden=!MEMO.id||MEMO.status==="Batal"; $("#meDel").hidden=!MEMO.id; $("#meRenum").hidden=!MEMO.id; memoStat(); renderMemoAtt(); window.scrollTo(0,0); }
 function memoStat(t){ $("#meStat").textContent=t||(MEMO.id?(MEMO.status==="Batal"?"Memo dibatalkan":"Tersimpan"):"Belum disimpan"); }
 let MDT=null, MAS=null, MSEQ=0, MSAVING=null;
+/* bar meter simpan memo 0–100% */
+let mpT=null, mpP=0, mpH=null;
+function mpStart(){ const b=$("#mpBar"); clearTimeout(mpH); clearInterval(mpT); mpP=3; b.hidden=false; b.className="svbar"; mpSet(); mpT=setInterval(()=>{ mpP=Math.min(92,mpP+Math.max(0.4,(92-mpP)*0.07)); mpSet(); },120); }
+function mpSet(){ $("#mpFill").style.width=mpP+"%"; $("#mpPct").textContent=Math.floor(mpP)+"%"; }
+function mpDone(ok){ const b=$("#mpBar"); clearInterval(mpT); if(ok){ mpP=100; mpSet(); b.className="svbar ok"; mpH=setTimeout(()=>{ b.hidden=true; },1800); } else { b.className="svbar err"; $("#mpPct").textContent="Gagal"; mpH=setTimeout(()=>{ b.hidden=true; },4000); } }
 /* simpan otomatis: memo baru disimpan di perangkat (nomor diberikan saat Simpan), memo yang sudah bernomor disimpan ke Google Sheets */
 function memoTouched(){ MEMO_DIRTY=true; MSEQ++; memoStat("Ada perubahan, menyimpan otomatis…");
-  clearTimeout(MDT); MDT=setTimeout(()=>{ try{ if(!MEMO.id){ localStorage.setItem(memoDraftKey(),JSON.stringify({data:MEMO.data,at:Date.now()})); memoStat("✓ Draf tersimpan otomatis di perangkat · nomor surat diberikan saat klik Simpan"); } }catch(_){} },600);
-  clearTimeout(MAS); if(MEMO.id) MAS=setTimeout(autoSaveMemo,1500); }
-async function autoSaveMemo(){ if(!MEMO||!MEMO.id||!MEMO_DIRTY) return; if(MSAVING){ await MSAVING; if(!MEMO_DIRTY) return; }
-  const seq=MSEQ, id=MEMO.id; memoStat("Menyimpan otomatis…");
-  MSAVING=run("saveMemo",{id,updated:MEMO.updated,date:MEMO.data.tanggal,status:MEMO.status,data:MEMO.data}).then(r=>{ if(!MEMO||MEMO.id!==id) return; MEMO.updated=r.updated; memoPut(r);
-      if(seq===MSEQ){ MEMO_DIRTY=false; memoStat("✓ Tersimpan otomatis "+new Date().toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})); } })
-    .catch(e=>{ memoStat("Gagal simpan otomatis, klik Simpan"); toast(e.message.replace(/^KONFLIK:\s*/,"")); }).finally(()=>{ MSAVING=null; });
+  clearTimeout(MDT); MDT=setTimeout(()=>{ try{ if(!MEMO.id){ localStorage.setItem(memoDraftKey(),JSON.stringify({data:MEMO.data,at:Date.now()})); memoStat(String(MEMO.data.judul||"").trim()?"Draf tersimpan di perangkat, sebentar lagi disimpan otomatis ke Google Sheets…":"✓ Draf tersimpan di perangkat · isi Judul agar tersimpan otomatis ke Google Sheets"); } }catch(_){} },600);
+  clearTimeout(MAS); if(MEMO.id) MAS=setTimeout(autoSaveMemo,1500); else if(String(MEMO.data.judul||"").trim()) MAS=setTimeout(autoSaveMemo,2500); }
+async function autoSaveMemo(){ if(!MEMO||!MEMO_DIRTY) return; if(MSAVING){ await MSAVING; if(!MEMO_DIRTY) return; }
+  if(!MEMO.id&&!String(MEMO.data.judul||"").trim()) return;
+  const seq=MSEQ, id=MEMO.id, me=MEMO, isNew=!id; memoStat(isNew?"Menyimpan otomatis & membuat nomor…":"Menyimpan otomatis…"); mpStart();
+  MSAVING=run("saveMemo",{id,updated:MEMO.updated,date:MEMO.data.tanggal,status:MEMO.status,data:MEMO.data}).then(r=>{ mpDone(true); if(MEMO!==me) return;
+      MEMO.id=r.id; MEMO.no=r.no; MEMO.seq=r.seq; MEMO.updated=r.updated; MEMO.status=r.status; memoPut(r);
+      if(isNew){ $("#meNo").textContent=r.no; $("#meRenum").hidden=false; $("#meDel").hidden=false; $("#meCancel").hidden=false; try{ localStorage.removeItem(memoDraftKey()); }catch(_){}
+        if(CACHE){ CACHE.memos=(CACHE.memos||[]).filter(x=>x.id!==r.id); CACHE.memos.unshift({id:r.id,no:r.no,seq:r.seq,date:r.date,title:r.title,status:r.status,updated:r.updated,by:r.by}); cacheSave(); } toast("Memo tersimpan otomatis dengan nomor "+r.no); }
+      if(seq===MSEQ){ MEMO_DIRTY=false; memoStat("✓ Tersimpan otomatis "+new Date().toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})); }
+      else { clearTimeout(MAS); MAS=setTimeout(autoSaveMemo,800); } })
+    .catch(e=>{ mpDone(false); memoStat("Gagal simpan otomatis, klik Simpan"); toast(e.message.replace(/^KONFLIK:\s*/,"")); }).finally(()=>{ MSAVING=null; });
   return MSAVING; }
 async function flushMemo(){ clearTimeout(MAS); if(MEMO&&MEMO.id&&MEMO_DIRTY) await autoSaveMemo(); else if(MSAVING) await MSAVING; }
 $("#memoEdit").addEventListener("input",e=>{ const k=e.target.dataset.m; if(!k||!MEMO) return; MEMO.data[k]=e.target.value; memoTouched(); });
@@ -953,19 +977,19 @@ $("#meAtt").addEventListener("click",e=>{ const v=e.target.closest("[data-mview]
   if(d){ MEMO.data.lampiran.splice(+d.dataset.mdel,1); renderMemoAtt(); memoTouched(); } });
 $("#meFile").onchange=async e=>{ const files=[...e.target.files]; e.target.value="";
   for(const f of files){ const isImg=/^image\//.test(f.type)&&!/svg/.test(f.type); if(!isImg&&f.size>10*1024*1024){ toast(f.name+" terlalu besar (maks 10 MB)"); continue; }
-    memoStat("Mengunggah "+f.name+"…");
+    memoStat("Mengunggah "+f.name+"…"); mpStart();
     try{ const d=isImg?await shrinkImage(f):await readFile(f); const r=await run("uploadAttachment",MEMO.data.tanggal||iso(new Date()),d.name,d.mime,d.data);
-      MEMO.data.lampiran.push({id:r.id,name:r.name,mime:r.mime,ket:""}); renderMemoAtt(); memoTouched(); }
-    catch(err){ toast("Gagal unggah: "+err.message); memoStat(); } } };
+      MEMO.data.lampiran.push({id:r.id,name:r.name,mime:r.mime,ket:""}); renderMemoAtt(); mpDone(true); memoTouched(); }
+    catch(err){ mpDone(false); toast("Gagal unggah: "+err.message); memoStat(); } } };
 $("#meSave").onclick=async()=>{ if(!String(MEMO.data.judul||"").trim()){ toast("Isi judul memo"); return; } clearTimeout(MAS); if(MSAVING) await MSAVING;
-  const b=$("#meSave"); b.disabled=true; memoStat("Menyimpan…");
+  const b=$("#meSave"); b.disabled=true; memoStat("Menyimpan…"); mpStart(); let okS=false;
   try{ const r=await run("saveMemo",{id:MEMO.id,updated:MEMO.updated,date:MEMO.data.tanggal,status:MEMO.status==="Batal"?"Batal":MEMO.status,data:MEMO.data});
     const isNew=!MEMO.id; memoPut(r);
     try{ const last={}; M_REMEMBER.forEach(k=>{ if(r.data&&r.data[k]) last[k]=r.data[k]; }); localStorage.setItem("lhit-memo-last",JSON.stringify(last)); if(isNew) localStorage.removeItem(memoDraftKey()); }catch(_){}
     if(CACHE){ CACHE.memos=(CACHE.memos||[]).filter(x=>x.id!==r.id); CACHE.memos.unshift({id:r.id,no:r.no,seq:r.seq,date:r.date,title:r.title,status:r.status,updated:r.updated,by:r.by}); cacheSave(); }
-    openMemo(r); toast(isNew?"Memo tersimpan dengan nomor "+r.no:"Memo tersimpan"); }
+    okS=true; openMemo(r); toast(isNew?"Memo tersimpan dengan nomor "+r.no:"Memo tersimpan"); }
   catch(e){ toast(e.message.replace(/^KONFLIK:\s*/,"")); memoStat(); }
-  b.disabled=false; };
+  mpDone(okS); b.disabled=false; };
 document.addEventListener("keydown",e=>{ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"&&curV==="memo"&&!$("#memoEdit").hidden){ e.preventDefault(); $("#meSave").click(); } });
 $("#meDel").onclick=()=>{ if(MEMO&&MEMO.id){ MEMO_DIRTY=false; clearTimeout(MAS); delMemo({id:MEMO.id,no:MEMO.no,title:MEMO.data.judul||MEMO.title}); } };
 $("#meRenum").onclick=async()=>{ const cur=MEMO.seq||""; const v=prompt("Nomor urut untuk memo ini (angka). Contoh: 74\nNomor surat berikutnya akan melanjutkan dari nomor terbesar.",cur); if(!v||String(v)===String(cur)) return;
@@ -973,44 +997,46 @@ $("#meRenum").onclick=async()=>{ const cur=MEMO.seq||""; const v=prompt("Nomor u
 $("#meBack").onclick=async()=>{ if(MEMO&&MEMO.id){ await flushMemo(); loadMemos(); return; } if(MEMO_DIRTY&&!confirm("Memo baru belum disimpan ke Google Sheets (draf tetap tersimpan di perangkat). Kembali ke daftar?")) return; loadMemos(); };
 $("#meCancel").onclick=async()=>{ if(!confirm("Batalkan memo "+MEMO.no+"? Nomornya tidak akan dipakai ulang.")) return;
   try{ await run("cancelMemo",MEMO.id); MEMO.status="Batal"; toast("Memo dibatalkan"); loadMemos(); }catch(e){ toast(e.message); } };
+$("#meLang").value=MLANG;
+$("#meLang").onchange=e=>{ MLANG=e.target.value; try{ localStorage.setItem("lhit-memo-lang",MLANG); }catch(_){} if(MLANG!=="id") toast("Cetak / PDF akan diterjemahkan otomatis ke "+(MLANG==="en"?"bahasa Inggris":"bahasa Korea")); };
 $("#mePrint").onclick=()=>{ if(!MEMO.id&&!confirm("Memo belum disimpan, nomor dokumen belum resmi. Tetap cetak pratinjau?")) return; printMemo(MEMO); };
 /* ---------- format cetak (mengikuti format Internal Memo kantor) ---------- */
-function memoHtml(m,imgs){ const D=m.data||{}, logo=(document.querySelector(".ld-logo")||{}).src||"";
+function memoHtml(m,imgs,lang,tr){ lang=lang||"id"; const L=ML[lang]||ML.id, D=lang!=="id"&&tr?Object.assign({},m.data||{},tr,{lampiran:((m.data||{}).lampiran||[]).map((a,i)=>Object.assign({},a,{ket:(tr.lampiranKet||[])[i]??a.ket}))}):(m.data||{}), logo=(document.querySelector(".ld-logo")||{}).src||"";
   const lines=t=>String(t||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
   const bul=t=>{ const L=lines(t); if(!L.length) return "-"; return "<ul>"+L.map(x=>/^[-–]\s*/.test(x)?`<li class="sub">${esc(x.replace(/^[-–]\s*/,""))}</li>`:`<li>${esc(x)}</li>`).join("")+"</ul>"; };
   const plain=t=>lines(t).map(esc).join("<br>")||"-";
   const link=t=>esc(t||"").replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1">$1</a>');
   const dd=D.tanggal?D.tanggal.slice(8,10)+"/"+D.tanggal.slice(5,7):"";
   const head=`<div class="mh"><img src="${logo}" alt="Woori Consulting"></div>`;
-  const lamp=(D.lampiran||[]).map((a,i)=>`<table class="mt att"><tr><th colspan="2">LAMPIRAN ${i+1} – FOTO / DOKUMEN PENDUKUNG</th></tr>
+  const lamp=(D.lampiran||[]).map((a,i)=>`<table class="mt att"><tr><th colspan="2">${L.lamp} ${i+1} – ${L.lampSub}</th></tr>
     <tr><td colspan="2" class="ph">${/^image\//.test(a.mime||"")&&imgs&&imgs[a.id]?`<img src="${imgs[a.id]}">`:`<i>${esc(a.name)}</i>`}</td></tr>
-    <tr><th class="k">KETERANGAN</th><td>${link(a.ket||"")}</td></tr></table>`).join("");
+    <tr><th class="k">${L.ket}</th><td>${link(a.ket||"")}</td></tr></table>`).join("");
   return `<div class="memo">
   <section class="pg">${head}
-    <h1>INTERNAL MEMO</h1>
-    <table class="ap"><tr><td rowspan="3" class="v">PERSETUJUAN</td><th>PIC IT</th><th>DIREKTUR</th><th>DIREKTUR UTAMA</th></tr><tr class="sg"><td></td><td></td><td></td></tr><tr><td>${dd}</td><td>/</td><td>/</td></tr></table>
-    <h2>1. INFORMASI PENYUSUN</h2>
-    <table class="mt"><tr><th>DIVISI / JABATAN</th><td>${esc(D.divisi||"-")}</td><th>TANGGAL</th><td>${esc(D.tanggal?dmyLong(D.tanggal):"-")}</td></tr>
-      <tr><th>PENYUSUN</th><td>${esc(D.penyusun||"-")}</td><th>TEMBUSAN</th><td>${esc(D.tembusan||"-")}</td></tr>
-      <tr><th>DIVISI PENGAJU</th><td>${esc(D.pengaju||"-")}</td><th>DIVISI PELAKSANA</th><td>${esc(D.pelaksana||"-")}</td></tr>
-      <tr><th>NO. DOKUMEN</th><td colspan="3" class="c">${esc(m.no||"(belum bernomor)")}</td></tr>
-      <tr><th>JUDUL</th><td colspan="3" class="c">${esc(D.judul||"-")}</td></tr></table>
-    <h2>2. ISI PENGAJUAN</h2>
-    <table class="mt"><tr><th>SOFTWARE</th><td class="c">${esc(D.software||"-")}</td><th>PENGGUNA</th><td class="c">${esc(D.pengguna||"-")}</td></tr>
-      <tr><th>JUMLAH USER</th><td class="c">${esc(D.jumlah||"-")}</td><th>DEPARTMENT</th><td class="c">${esc(D.department||"-")}</td></tr>
-      <tr><th>SUBJEK</th><td colspan="3">${esc(D.subjek||"-")}</td></tr>
-      <tr><th>ALASAN</th><td colspan="3">${bul(D.alasan)}</td></tr>
-      <tr><th>TUJUAN</th><td colspan="3">${bul(D.tujuan)}</td></tr>
-      <tr><th>MANFAAT</th><td colspan="3">${bul(D.manfaat)}</td></tr></table>
+    <h1>${L.title}</h1>
+    <table class="ap"><tr><td rowspan="3" class="v">${L.appr}</td><th>${L.pic}</th><th>${L.dir}</th><th>${L.ceo}</th></tr><tr class="sg"><td></td><td></td><td></td></tr><tr><td>${dd}</td><td>/</td><td>/</td></tr></table>
+    <h2>1. ${L.s1}</h2>
+    <table class="mt"><tr><th>${L.div}</th><td>${esc(D.divisi||"-")}</td><th>${L.date}</th><td>${esc(D.tanggal?dmyLong(D.tanggal,lang):"-")}</td></tr>
+      <tr><th>${L.by}</th><td>${esc(D.penyusun||"-")}</td><th>${L.cc}</th><td>${esc(D.tembusan||"-")}</td></tr>
+      <tr><th>${L.req}</th><td>${esc(D.pengaju||"-")}</td><th>${L.exe}</th><td>${esc(D.pelaksana||"-")}</td></tr>
+      <tr><th>${L.no}</th><td colspan="3" class="c">${esc(m.no||L.nono)}</td></tr>
+      <tr><th>${L.subj}</th><td colspan="3" class="c">${esc(D.judul||"-")}</td></tr></table>
+    <h2>2. ${L.s2}</h2>
+    <table class="mt"><tr><th>${L.sw}</th><td class="c">${esc(D.software||"-")}</td><th>${L.user}</th><td class="c">${esc(D.pengguna||"-")}</td></tr>
+      <tr><th>${L.nuser}</th><td class="c">${esc(D.jumlah||"-")}</td><th>${L.dept}</th><td class="c">${esc(D.department||"-")}</td></tr>
+      <tr><th>${L.topic}</th><td colspan="3">${esc(D.subjek||"-")}</td></tr>
+      <tr><th>${L.why}</th><td colspan="3">${bul(D.alasan)}</td></tr>
+      <tr><th>${L.goal}</th><td colspan="3">${bul(D.tujuan)}</td></tr>
+      <tr><th>${L.ben}</th><td colspan="3">${bul(D.manfaat)}</td></tr></table>
   </section>
   <section class="pg">${head}
-    <h2>3. RINCIAN DAN PENDAPAT AKHIR</h2>
-    <table class="mt"><tr><th class="hd">ITEM</th><th class="hd">RINCIAN</th></tr>
-      <tr><th>RINCIAN BIAYA</th><td>${bul(D.rincian)}</td></tr>
-      <tr><th>PENDAPAT AKHIR</th><td>${plain(D.pendapat)}</td></tr></table>
-    <p class="close">${esc(D.penutup||"Mohon ditinjau dan disetujui.")}</p>
+    <h2>3. ${L.s3}</h2>
+    <table class="mt"><tr><th class="hd">${L.item}</th><th class="hd">${L.det}</th></tr>
+      <tr><th>${L.cost}</th><td>${bul(D.rincian)}</td></tr>
+      <tr><th>${L.fin}</th><td>${plain(D.pendapat)}</td></tr></table>
+    <p class="close">${esc(D.penutup||L.close)}</p>
   </section>
-  ${lamp?`<section class="pg">${head}<h2>4. LAMPIRAN</h2>${lamp}</section>`:""}
+  ${lamp?`<section class="pg">${head}<h2>4. ${L.s4}</h2>${lamp}</section>`:""}
   </div>`;
 }
 const MEMO_CSS=`@page{size:A4;margin:14mm 16mm}body{margin:0;font:12px Arial,Helvetica,sans-serif;color:#000}
@@ -1026,13 +1052,14 @@ table{border-collapse:collapse;width:100%}td,th{border:1px solid #000;padding:5p
 .close{text-align:center;margin-top:12px}
 .att{margin-bottom:14px}.att th{text-align:center}.att th.k{width:22%}.att .ph{text-align:center;padding:10px}.att .ph img{max-width:100%;max-height:340px}
 a{color:#000}`;
-async function printMemo(m){
+async function printMemo(m,lang){ lang=lang||MLANG;
   const w=window.open("","_blank"); if(!w){ toast("Izinkan pop-up untuk mencetak"); return; }
-  w.document.write("<p style='font:14px Arial;padding:20px'>Menyiapkan memo…</p>");
+  w.document.write(`<p style='font:14px Arial;padding:20px'>${lang==="id"?"Menyiapkan memo…":"Menerjemahkan memo ke "+(lang==="en"?"bahasa Inggris":"bahasa Korea")+"…"}</p>`);
+  let tr=null; if(lang!=="id"){ try{ tr=await memoTr(m,lang); if(MEMO&&MEMO.id&&MEMO.id===m.id&&MEMO.data!==m.data) MEMO.data.tr=m.data.tr; }catch(e){ w.close(); toast("Gagal menerjemahkan: "+e.message); return; } }
   const imgs={}; for(const a of ((m.data||{}).lampiran||[])){ if(!/^image\//.test(a.mime||"")) continue;
     const c=typeof imgCacheGet==="function"?imgCacheGet(a.id):null; if(c){ imgs[a.id]=c; continue; }
     try{ const r=await run("viewAttachment",a.id); imgs[a.id]=`data:${r.mime};base64,${r.data}`; }catch(e){} }
-  w.document.open(); w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(m.no||"Internal Memo")}</title><style>${MEMO_CSS}</style></head><body>${memoHtml(m,imgs)}</body></html>`); w.document.close();
+  w.document.open(); w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(m.no||"Internal Memo")}</title><style>${MEMO_CSS}</style></head><body>${memoHtml(m,imgs,lang,tr)}</body></html>`); w.document.close();
   setTimeout(()=>{ w.focus(); w.print(); },500);
 }
 
